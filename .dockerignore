@@ -1,0 +1,45 @@
+# Keep the build context (and image) small and free of local/dev artifacts.
+
+# Version control
+.git
+.gitignore
+
+# Python caches and bytecode
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+
+# Local virtualenv — the image builds its own with `uv sync`
+.venv/
+
+# Local database, media and collected static — these live on the volume / are
+# rebuilt in the image, never copied from the host.
+db.sqlite3
+db.sqlite3-journal
+/media/
+media/
+staticfiles/
+
+# Test / coverage / tooling caches
+.pytest_cache/
+.ruff_cache/
+.ty_cache/
+.coverage
+htmlcov/
+coverage.xml
+tests/
+
+# Local environment and editor files
+.env
+.DS_Store
+*.swp
+
+# Dev-only tooling artifacts (teatree overlay sources, CI/CD config)
+.t3-dev-sources
+.github/
+.pre-commit-config.yaml
+
+# Deployment docs (not needed inside the image)
+DEPLOY.md
+COST_ESTIMATE.md

@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies (with dev tooling)
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run ty check portal config
+
+      - name: Tests + coverage gate
+        run: uv run pytest
+
+  prod-image-deps:
+    # Proves the production install excludes the dev-only teatree CLI.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync runtime-only dependencies
+        run: uv sync --frozen --no-dev
+
+      - name: Assert teatree is absent from the production environment
+        run: |
+          if uv pip list | grep -i teatree; then
+            echo "::error::teatree leaked into the production (--no-dev) environment"
+            exit 1
+          fi
+          echo "OK: no teatree in the --no-dev environment"
