@@ -1,0 +1,156 @@
+[project]
+name = "borrower-portal"
+version = "0.1.0"
+description = "A minimal white-label borrower portal with AI document analysis — Django 6 + HTMX."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "django>=6.0",
+  "django-fsm-2>=4.2",
+  "django-tasks==0.9.0",
+  "django-htmx>=1.23",
+  "django-widget-tweaks>=1.5",
+  "anthropic>=0.104",
+  "whitenoise>=6.11",
+  "gunicorn>=23.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4",
+  "pytest-django>=4.11",
+  "pytest-cov>=7.0",
+  "pytest-mock>=3.15",
+  "ruff>=0.14",
+  "ty>=0.0.1a14",
+  "django-types>=0.22",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+fix = true
+lint.select = [ "ALL" ]
+lint.ignore = [
+  "CPY001", # missing-copyright-notice — not applicable
+  # D1xx: missing docstrings — we prefer self-documenting code over docstrings
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D104",
+  "D105",
+  "D106",
+  "D107",
+  "D203", # one-blank-line-before-class — conflicts with D211
+  "D213", # multi-line-summary-second-line — conflicts with D212
+  "DOC201",
+  "DOC402",
+  "DOC501",
+  "INP001", # implicit-namespace-package
+  "ISC002", # implicit-str-concat-in-sequence
+  "RUF012", # mutable class attributes — Django models/Meta use these idiomatically
+]
+lint.extend-ignore = [
+  "COM812",
+  "COM819",
+  "D206",
+  "D300",
+  "E111",
+  "E114",
+  "E117",
+  "Q000",
+  "Q001",
+  "Q002",
+  "Q003",
+  "Q004",
+  "W191",
+]
+lint.per-file-ignores."**/migrations/*.py" = [
+  "ANN",
+  "ARG001",
+  "E501",
+  "RUF012",
+]
+# Django-generated entrypoint boilerplate — left as the framework writes it.
+lint.per-file-ignores."manage.py" = [ "ANN201", "EM101", "PLC0415", "TRY003" ]
+lint.per-file-ignores."**/settings.py" = [
+  "S105", # hardcoded password string — dev-only default secret key, overridden in prod
+  "E501",
+]
+lint.per-file-ignores."tests/**/*.py" = [
+  "ANN",
+  "ARG001",
+  "ARG002",
+  "PLR2004", # magic value in tests
+  "PLR0913", # test helpers take many fixtures
+  "PLR6301", # no-self-use (test methods)
+  "S101",    # assert
+  "S105",
+  "S106",
+  "SLF001",  # private member access
+]
+lint.fixable = [ "ALL" ]
+lint.unfixable = [ "F401", "F811" ]
+lint.flake8-tidy-imports.banned-api."__future__.annotations" = { msg = "Use native 3.10+ syntax (X | Y) instead of from __future__ import annotations" }
+lint.isort.split-on-trailing-comma = false
+lint.pydocstyle.convention = "google"
+lint.pylint.max-args = 6
+lint.preview = true
+
+[tool.pytest.ini_options]
+addopts = """
+--color=yes --strict-config --strict-markers --verbose
+--cov --cov-report=term-missing:skip-covered --cov-branch
+--reuse-db
+"""
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = [ "test_*.py", "tests.py" ]
+testpaths = [ "tests" ]
+filterwarnings = [
+  "error",
+]
+
+[tool.coverage.report]
+fail_under = 95
+precision = 1
+show_missing = true
+exclude_lines = [
+  "if __name__",
+  "if TYPE_CHECKING",
+  "pragma: no cover",
+]
+
+[tool.coverage.run]
+branch = true
+source = [ "portal", "config" ]
+omit = [
+  "*/migrations/*",
+  "*/wsgi.py",
+  "*/asgi.py",
+  "manage.py",
+]
+
+[tool.ty.environment]
+python-version = "3.13"
+
+[tool.ty.rules]
+unused-ignore-comment = "error"
+
+# ty cannot resolve Django's metaclass-generated members — reverse relation
+# managers (``self.incomes``), ``get_FOO_display()``, ``<fk>_id`` shadows — nor
+# the FSMField descriptor's ``save``/``transition`` overloads. django-stubs
+# would help but its mypy plugin is unsupported by ty. Scope the affected
+# rules down for the model and migration layers only; everything else stays
+# strict.
+[[tool.ty.overrides]]
+include = [ "portal/models/**", "portal/migrations/**" ]
+
+[tool.ty.overrides.rules]
+unresolved-attribute = "ignore"
+invalid-argument-type = "ignore"
+no-matching-overload = "ignore"
+
+[tool.uv]
+managed = true
+package = false

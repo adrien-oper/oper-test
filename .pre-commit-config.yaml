@@ -1,0 +1,54 @@
+default_install_hook_types: [commit-msg, pre-commit, pre-push]
+fail_fast: false
+
+repos:
+  # Dependency lockfile stays in sync with pyproject.
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.10.9
+    hooks:
+      - id: uv-lock
+
+  # Lint + format with ruff.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.15
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  # Standard hygiene.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: detect-private-key
+
+  # Secret scanning — fail the commit if a credential is staged.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+
+  # Static type check (runs on push so the inner loop stays fast).
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty static type check
+        entry: uv run ty check portal config
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+      - id: pytest
+        name: pytest with coverage gate
+        entry: uv run pytest
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
