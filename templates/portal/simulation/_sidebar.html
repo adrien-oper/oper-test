@@ -1,0 +1,11 @@
+{% regroup sidebar by group as groups %}
+<aside class="sidebar">
+  {% for group in groups %}
+    <div class="side-group">{{ group.grouper }}</div>
+    {% for step in group.list %}
+      <div class="side-step {% if step.active %}active{% endif %} {% if step.done %}done{% endif %}">
+        <span class="tick"></span>{{ step.label }}
+      </div>
+    {% endfor %}
+  {% endfor %}
+</aside>

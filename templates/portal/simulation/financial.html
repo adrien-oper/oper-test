@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="layout">
+  {% include "portal/simulation/_sidebar.html" %}
+  <section>
+    {% if slug == "income" %}
+      <h1>Your income</h1>
+      <p class="lead">An accurate simulation starts with knowing your income.</p>
+    {% else %}
+      <h1>Your expenses</h1>
+      <p class="lead">We also need to understand your current commitments.</p>
+    {% endif %}
+
+    {% if slug == "income" %}
+      <div id="rows-wrap">{% include "portal/simulation/_income_rows.html" %}</div>
+    {% else %}
+      <div id="rows-wrap">{% include "portal/simulation/_expense_rows.html" %}</div>
+    {% endif %}
+
+    <form method="post" action="{% url 'portal:simulation_step' slug=slug %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary">Next</button>
+      {% if previous %}
+        <a class="btn" href="{% url 'portal:simulation_step' slug=previous %}">Back</a>
+      {% endif %}
+    </form>
+  </section>
+</div>
+{% endblock %}

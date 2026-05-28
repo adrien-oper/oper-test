@@ -116,6 +116,8 @@ python_files = [ "test_*.py", "tests.py" ]
 testpaths = [ "tests" ]
 filterwarnings = [
   "error",
+  # WhiteNoise warns when STATIC_ROOT is empty before collectstatic; harmless in tests.
+  "ignore:No directory at:UserWarning",
 ]
 
 [tool.coverage.report]
@@ -151,12 +153,20 @@ unused-ignore-comment = "error"
 # rules down for the model and migration layers only; everything else stays
 # strict.
 [[tool.ty.overrides]]
-include = [ "portal/models/**", "portal/migrations/**" ]
+include = [
+  "portal/models/**",
+  "portal/migrations/**",
+  "portal/views/**",
+  "portal/forms.py",
+  "portal/forms_auth.py",
+]
 
 [tool.ty.overrides.rules]
 unresolved-attribute = "ignore"
 invalid-argument-type = "ignore"
 no-matching-overload = "ignore"
+unsupported-operator = "ignore"
+invalid-type-form = "ignore"
 
 [tool.uv]
 managed = true

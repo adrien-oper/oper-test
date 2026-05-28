@@ -21,9 +21,12 @@ repos:
     rev: v6.0.0
     hooks:
       - id: end-of-file-fixer
+        exclude: ^static/portal/vendor/
       - id: trailing-whitespace
+        exclude: ^static/portal/vendor/
       - id: mixed-line-ending
         args: [--fix=lf]
+        exclude: ^static/portal/vendor/
       - id: check-merge-conflict
       - id: check-toml
       - id: check-yaml

@@ -1,0 +1,40 @@
+<div class="report-summary">
+  <div class="summary-item"><div class="k">Loan amount</div><div class="v">&euro; {{ report.loan_amount|floatformat:0 }}</div></div>
+  <div class="summary-item"><div class="k">Monthly payment</div><div class="v">&euro; {{ report.monthly_payment|floatformat:0 }}</div></div>
+  <div class="summary-item"><div class="k">Duration</div><div class="v">{{ report.duration_years }} years</div></div>
+  <div class="summary-item"><div class="k">Interest rate</div><div class="v">{{ report.annual_rate_pct }}%</div></div>
+  <div class="summary-item">
+    <div class="k">Affordability</div>
+    {% if report.within_reach %}
+      <div class="v"><span class="pill pill-good">Within reach</span></div>
+    {% else %}
+      <div class="v"><span class="pill pill-bad">Over budget</span></div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Mortgage overview</h2>
+  <form hx-get="{% url 'portal:simulation_step' slug='report' %}"
+        hx-target="#report-card" hx-swap="innerHTML" hx-trigger="input from:input[type=range]">
+    <div class="slider-block">
+      <label>Own funds <span>&euro; {{ report.own_funds|floatformat:0 }}</span></label>
+      <input type="range" name="own_funds" min="{{ min_funds }}" max="{{ max_funds }}"
+             step="1000" value="{{ report.own_funds|floatformat:0 }}">
+    </div>
+    <div class="slider-block">
+      <label>Duration <span>{{ report.duration_years }} years</span></label>
+      <input type="range" name="duration" min="10" max="30" step="5" value="{{ report.duration_years }}">
+    </div>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Costs</h2>
+  <table class="costs-table">
+    <tr><td>Property price</td><td>&euro; {{ report.property_price|floatformat:0 }}</td></tr>
+    <tr><td>Purchase costs</td><td>&euro; {{ report.purchase_costs|floatformat:0 }}</td></tr>
+    <tr><td>Total project cost</td><td>&euro; {{ report.total_project_cost|floatformat:0 }}</td></tr>
+    <tr><td>Total to reimburse</td><td>&euro; {{ report.total_to_reimburse|floatformat:0 }}</td></tr>
+  </table>
+</div>

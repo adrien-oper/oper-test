@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% load widget_tweaks %}
+
+{% block content %}
+<div class="layout">
+  {% include "portal/simulation/_sidebar.html" %}
+  <section>
+    {% if slug == "purpose" %}
+      <h1>Welcome to your home journey!</h1>
+      <p class="lead">What is your project purpose?</p>
+    {% elif slug == "borrowers" %}
+      <h1>Who is borrowing?</h1>
+      <p class="lead">Are you applying alone or with someone?</p>
+    {% elif slug == "project" %}
+      <h1>Project details</h1>
+      <p class="lead">Provide us more details about your project.</p>
+    {% elif slug == "contribution" %}
+      <h1>Your contribution</h1>
+      <p class="lead">How much can you contribute up front?</p>
+    {% elif slug == "personal" %}
+      <h1>Personal details</h1>
+      <p class="lead">A couple of last details to tailor your simulation.</p>
+    {% endif %}
+
+    <form method="post" action="{% url 'portal:simulation_step' slug=slug %}">
+      {% csrf_token %}
+      {% if slug == "purpose" or slug == "borrowers" %}
+        {% for field in form %}
+          <ul class="option-list">
+            {% for radio in field %}
+              <li><label class="option">{{ radio.tag }}<span class="label">{{ radio.choice_label }}</span></label></li>
+            {% endfor %}
+          </ul>
+          {{ field.errors }}
+        {% endfor %}
+      {% else %}
+        {% for field in form %}
+          <div class="field">
+            {{ field.label_tag }}
+            {{ field|add_class:"input" }}
+            {{ field.errors }}
+          </div>
+        {% endfor %}
+      {% endif %}
+      <button type="submit" class="btn btn-primary">Next</button>
+      {% if previous %}
+        <a class="btn" href="{% url 'portal:simulation_step' slug=previous %}">Back</a>
+      {% endif %}
+    </form>
+  </section>
+</div>
+{% endblock %}

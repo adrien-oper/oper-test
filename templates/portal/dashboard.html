@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Simulations</h1>
+{% for simulation in simulations %}
+  <div class="sim-card">
+    <div>
+      <div class="ref">#{{ simulation.reference }}</div>
+      <div class="price">&euro; {{ simulation.feasibility.loan_amount|floatformat:0 }}</div>
+      <span class="pill pill-good">{{ simulation.get_purpose_display }}</span>
+    </div>
+    {% if simulation.state == "converted" %}
+      <span class="pill">Application started</span>
+    {% else %}
+      <a class="btn btn-primary" href="{% url 'portal:apply_to_simulation' pk=simulation.pk %}">Review and apply</a>
+    {% endif %}
+  </div>
+{% empty %}
+  <p class="lead">No simulations yet.</p>
+{% endfor %}
+<a class="btn" href="{% url 'portal:simulation_start' %}">+ New simulation</a>
+
+{% if applications %}
+  <h1 style="margin-top:40px">Applications</h1>
+  {% for application in applications %}
+    <div class="sim-card">
+      <div>
+        <div class="ref">#{{ application.reference }}</div>
+        <span class="pill">{{ application.get_state_display }}</span>
+      </div>
+    </div>
+  {% endfor %}
+{% endif %}
+{% endblock %}

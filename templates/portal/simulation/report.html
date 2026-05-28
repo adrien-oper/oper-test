@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="layout">
+  {% include "portal/simulation/_sidebar.html" %}
+  <section>
+    <h1>Your simulation report</h1>
+    <p class="lead">Play with the sliders to see what fits your budget.</p>
+    <div id="report-card">{% include "portal/simulation/_report_card.html" %}</div>
+    {% if previous %}
+      <a class="btn" href="{% url 'portal:simulation_step' slug=previous %}">Back</a>
+    {% endif %}
+    {% if user.is_authenticated %}
+      <a class="btn btn-primary" href="{% url 'portal:apply_to_simulation' pk=simulation.pk %}">Apply</a>
+    {% else %}
+      <a class="btn btn-primary" href="{% url 'portal:signup' %}">Sign up to continue</a>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

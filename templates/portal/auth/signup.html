@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="content-narrow">
+  <div class="panel">
+    <h1 style="text-align:center">Sign up</h1>
+    <p class="lead" style="text-align:center">Sign up to continue your journey.</p>
+    <form method="post" action="{% url 'portal:signup' %}">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="message error">{{ form.non_field_errors }}</div>{% endif %}
+      <div class="field">{{ form.email.label_tag }}{{ form.email }}{{ form.email.errors }}</div>
+      <div class="field">{{ form.password.label_tag }}{{ form.password }}{{ form.password.errors }}</div>
+      <ul class="lead" style="font-size:.85rem">
+        <li>At least 10 characters long</li>
+        <li>Not entirely numeric, not too common</li>
+      </ul>
+      <div class="field">
+        <label class="option">{{ form.accept_terms }}<span>I accept the terms and conditions</span></label>
+        {{ form.accept_terms.errors }}
+      </div>
+      <div class="field">
+        <label class="option">{{ form.accept_privacy }}<span>I accept the privacy policy</span></label>
+        {{ form.accept_privacy.errors }}
+      </div>
+      <button type="submit" class="btn btn-primary">Agree &amp; Continue</button>
+    </form>
+    <p style="text-align:center">Already registered? <a class="help-link" href="{% url 'portal:login' %}">Log in</a></p>
+  </div>
+</div>
+{% endblock %}

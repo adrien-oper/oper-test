@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="content-narrow">
+  <div class="panel">
+    <h1 style="text-align:center">Choose a help office</h1>
+    <p class="lead" style="text-align:center">Pick the office that will support your application.</p>
+    <form method="post" action="{% url 'portal:choose_office' %}">
+      {% csrf_token %}
+      <div class="field">{{ form.office.label_tag }}{{ form.office }}{{ form.office.errors }}</div>
+      <button type="submit" class="btn btn-primary">Finish</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

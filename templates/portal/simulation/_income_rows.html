@@ -1,0 +1,19 @@
+<div class="rows">
+  {% for line in lines %}
+    <div class="row-item">
+      <span>{{ line.get_income_type_display }}</span>
+      <span class="amount">&euro; {{ line.monthly_amount }} / mo
+        <button hx-post="{% url 'portal:delete_income_line' pk=line.pk %}"
+                hx-target="#rows-wrap" hx-swap="innerHTML" title="Remove">&times;</button>
+      </span>
+    </div>
+  {% empty %}
+    <p class="lead">No income added yet.</p>
+  {% endfor %}
+</div>
+
+<form class="add-row" hx-post="{% url 'portal:add_income_line' %}" hx-target="#rows-wrap" hx-swap="innerHTML">
+  <div class="field">{{ line_form.income_type.label_tag }}{{ line_form.income_type }}</div>
+  <div class="field">{{ line_form.monthly_amount.label_tag }}{{ line_form.monthly_amount }}</div>
+  <button type="submit" class="btn">+ Add income</button>
+</form>
