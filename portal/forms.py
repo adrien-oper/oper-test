@@ -7,7 +7,7 @@ validation lives here; business rules stay on the models.
 
 from django import forms
 
-from portal.models import Application, ExpenseLine, IncomeLine, Simulation
+from portal.models import Application, Document, ExpenseLine, IncomeLine, Simulation
 
 
 class PurposeForm(forms.ModelForm):
@@ -53,6 +53,12 @@ class ExpenseLineForm(forms.ModelForm):
     class Meta:
         model = ExpenseLine
         fields = ["expense_type", "monthly_amount"]
+
+
+class DocumentUploadForm(forms.ModelForm):
+    class Meta:
+        model = Document
+        fields = ["kind", "file"]
 
 
 class ApplicationDetailsForm(forms.ModelForm):

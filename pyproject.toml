@@ -157,6 +157,8 @@ include = [
   "portal/models/**",
   "portal/migrations/**",
   "portal/views/**",
+  "portal/ai/**",
+  "portal/tasks.py",
   "portal/forms.py",
   "portal/forms_auth.py",
 ]
@@ -178,7 +180,7 @@ package = true
 teatree = { git = "https://github.com/souliane/teatree" }
 
 [build-system]
-requires = [ "uv_build>=0.10" ]
+requires = [ "uv_build>=0.10,<0.12" ]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

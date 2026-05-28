@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="content-narrow">
+  <h1>Your application</h1>
+  <p class="lead">Application #{{ application.reference }} — complete your details and submit.</p>
+  <form method="post" action="{% url 'portal:application_form' pk=application.pk %}">
+    {% csrf_token %}
+    {% for field in form %}
+      <div class="field">{{ field.label_tag }}{{ field }}{{ field.errors }}</div>
+    {% endfor %}
+    <button type="submit" class="btn btn-primary">Submit loan request</button>
+  </form>
+  <a class="btn" href="{% url 'portal:dashboard' %}">Save &amp; exit</a>
+</div>
+{% endblock %}

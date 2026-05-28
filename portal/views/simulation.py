@@ -11,7 +11,6 @@ from decimal import Decimal, InvalidOperation
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from portal import forms, wizard
@@ -227,10 +226,6 @@ def _report(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def apply_to_simulation(request: HttpRequest, pk: int) -> HttpResponse:
-    """Placeholder route the report 'apply' button targets.
-
-    Wired fully in the application chunk; for now it simply lands the user
-    on the dashboard so the report's primary action is never a dead end.
-    """
+    """Entry point for the apply flow — lands on the simulation recap."""
     get_object_or_404(Simulation, pk=pk, user=request.user)
-    return redirect(reverse("portal:dashboard"))
+    return redirect("portal:apply_recap", pk=pk)
