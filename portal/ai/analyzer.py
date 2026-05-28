@@ -4,27 +4,27 @@ Two interchangeable paths behind one ``analyze_document`` function:
 
 * **Stub** (default) — deterministic, clearly labelled, no network. Used
   whenever ``ANTHROPIC_API_KEY`` is unset, so the deployed demo is free and
-  reproducible.
-* **Live** — the Anthropic Messages API with *prompt caching*: the large,
-  static system prompt (classification taxonomy + extraction schema) carries
-  a ``cache_control`` breakpoint so repeated analyses reuse it cheaply.
+  reproducible. Its output is always valid by construction.
+* **Live** — the Anthropic Messages API. The large, static system prompt
+  carries a ``cache_control`` breakpoint so the API may reuse it across calls
+  once it crosses the model's cache minimum.
 
-Both return the same :class:`AnalysisResult`, so callers and tests never care
-which path ran.
+Both return the same :class:`AnalysisResult` on success. Output the model
+cannot produce validly (unparseable JSON, missing or unknown ``detected_kind``)
+raises :class:`InvalidAnalysisError` so the caller can fail the document
+rather than silently record a bogus "other" classification.
 """
 
 import json
+import re
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from django.conf import settings
 
 from portal import enums
 
-# Static, cacheable system prompt. Kept verbatim so the live path can mark it
-# with a prompt-cache breakpoint — the whole point of caching is that this
-# text never changes between calls.
 SYSTEM_PROMPT = """You are a mortgage back-office assistant. You receive the
 text of a single supporting document uploaded for a mortgage application.
 
@@ -45,11 +45,12 @@ Return ONLY a JSON object with this shape:
 Do not include any prose outside the JSON object.
 """
 
-# Field name -> the applicant attribute it should agree with.
-_FIELD_TO_APPLICATION_ATTR = {
-    "national_number": "national_number",
-    "full_name": "_full_name",
-}
+_VALID_KINDS = {kind.value for kind in enums.DocumentKind}
+_PRICE_NON_NUMERIC = re.compile(r"[^\d.]")
+
+
+class InvalidAnalysisError(Exception):
+    """The analyzer produced output that cannot be trusted as a result."""
 
 
 @dataclass
@@ -73,6 +74,16 @@ class ApplicationFacts:
     property_price: Decimal | None = None
 
 
+def _normalise_price(value: object) -> Decimal | None:
+    cleaned = _PRICE_NON_NUMERIC.sub("", str(value))
+    if not cleaned:
+        return None
+    try:
+        return Decimal(cleaned)
+    except InvalidOperation:
+        return None
+
+
 def detect_mismatches(extracted: dict[str, Any], facts: ApplicationFacts) -> list[str]:
     """Compare extracted fields against the application, returning mismatches.
 
@@ -88,6 +99,12 @@ def detect_mismatches(extracted: dict[str, Any], facts: ApplicationFacts) -> lis
         found = extracted.get(key)
         if found and application_value and str(found).strip().lower() != str(application_value).strip().lower():
             mismatches.append(f"Document {key} '{found}' does not match application '{application_value}'.")
+
+    found_price = _normalise_price(extracted["property_price"]) if extracted.get("property_price") else None
+    if found_price is not None and facts.property_price is not None and found_price != facts.property_price:
+        mismatches.append(
+            f"Document property_price '{found_price}' does not match application '{facts.property_price}'."
+        )
     return mismatches
 
 
@@ -116,7 +133,7 @@ def _stub_result(filename: str, facts: ApplicationFacts) -> AnalysisResult:
 
 
 def _live_result(text: str, filename: str, facts: ApplicationFacts) -> AnalysisResult:
-    """Analyse via the Anthropic Messages API with prompt caching."""
+    """Analyse via the Anthropic Messages API."""
     import anthropic  # noqa: PLC0415 — optional dependency, only needed on the live path
 
     client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
@@ -140,22 +157,29 @@ def _live_result(text: str, filename: str, facts: ApplicationFacts) -> AnalysisR
     payload = _parse_payload(response.content[0].text)
     extracted = payload.get("extracted_fields", {})
     return AnalysisResult(
-        detected_kind=payload.get("detected_kind", enums.DocumentKind.OTHER.value),
+        detected_kind=payload["detected_kind"],
         summary=payload.get("summary", ""),
-        extracted_fields=extracted,
-        mismatches=detect_mismatches(extracted, facts),
+        extracted_fields=extracted if isinstance(extracted, dict) else {},
+        mismatches=detect_mismatches(extracted if isinstance(extracted, dict) else {}, facts),
         is_stub=False,
         model_used=settings.ANTHROPIC_MODEL,
     )
 
 
 def _parse_payload(text: str) -> dict[str, Any]:
-    """Parse the model's text block as a JSON object, tolerating junk."""
+    """Parse the model's text block as a valid analysis object or fail loudly."""
     try:
         parsed = json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+    except (json.JSONDecodeError, TypeError) as exc:
+        msg = "Analyzer response was not valid JSON."
+        raise InvalidAnalysisError(msg) from exc
+    if not isinstance(parsed, dict):
+        msg = "Analyzer response was not a JSON object."
+        raise InvalidAnalysisError(msg)
+    if parsed.get("detected_kind") not in _VALID_KINDS:
+        msg = f"Analyzer returned an unknown document kind: {parsed.get('detected_kind')!r}."
+        raise InvalidAnalysisError(msg)
+    return parsed
 
 
 def analyze_document(text: str, filename: str, facts: ApplicationFacts) -> AnalysisResult:

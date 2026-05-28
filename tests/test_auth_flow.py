@@ -90,12 +90,40 @@ class TestPhoneAndOffice:
         response = client.post(reverse("portal:verify_phone"), {"phone_number": "+32470123456", "code": "abcdef"})
         assert response.status_code == 200
 
+    def test_verify_phone_requires_a_code(self, client):
+        self._signup(client)
+        response = client.post(reverse("portal:verify_phone"), {"phone_number": "+32470123456"})
+        assert response.status_code == 200  # missing code re-displays the form
+
+    def test_choose_office_requires_phone_verification(self, client, office):
+        self._signup(client)  # signed in but phone not verified
+        response = client.get(reverse("portal:choose_office"))
+        assert response.status_code == 302
+        assert response.url == reverse("portal:verify_phone")
+
+    def test_choose_office_blocks_post_without_verification(self, client, office):
+        self._signup(client)
+        response = client.post(reverse("portal:choose_office"), {"office": office.pk})
+        assert response.status_code == 302
+        assert response.url == reverse("portal:verify_phone")
+        assert "help_office_id" not in client.session
+
     def test_choose_office_requires_login(self, client):
         response = client.get(reverse("portal:choose_office"))
         assert response.status_code == 302
 
+    def _verify_phone(self, client):
+        client.post(reverse("portal:verify_phone"), {"phone_number": "+32470123456", "code": "123456"})
+
+    def test_choose_office_renders_after_verification(self, client, office):
+        self._signup(client)
+        self._verify_phone(client)
+        response = client.get(reverse("portal:choose_office"))
+        assert response.status_code == 200
+
     def test_choose_office_lands_on_dashboard(self, client, office):
         self._signup(client)
+        self._verify_phone(client)
         response = client.post(reverse("portal:choose_office"), {"office": office.pk})
         assert response.status_code == 302
         assert response.url == reverse("portal:dashboard")
@@ -114,3 +142,17 @@ class TestDashboard:
         response = client.get(reverse("portal:dashboard"))
         assert response.status_code == 200
         assert b"Simulations" in response.content
+
+    def test_dashboard_query_count_is_flat_in_simulations(self, client, django_assert_max_num_queries):
+        from decimal import Decimal  # noqa: PLC0415
+
+        from portal.models import IncomeLine  # noqa: PLC0415
+
+        user = User.objects.create_user(username="ada@example.com", password="Str0ng!pass99")
+        for _ in range(5):
+            sim = Simulation.objects.create(user=user, property_price=Decimal(300000))
+            IncomeLine.objects.create(simulation=sim, monthly_amount=Decimal(5000))
+        client.force_login(user)
+        with django_assert_max_num_queries(8):
+            response = client.get(reverse("portal:dashboard"))
+        assert response.status_code == 200

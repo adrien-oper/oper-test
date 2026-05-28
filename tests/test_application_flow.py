@@ -47,6 +47,13 @@ class TestApplyRecap:
         assert response.status_code == 302
         assert response.url == reverse("portal:application_detail", kwargs={"pk": application.pk})
 
+    def test_recap_redirects_when_simulation_not_completed(self, client, user):
+        sim = Simulation.objects.create(user=user, property_price=Decimal(300000))
+        client.force_login(user)
+        response = client.get(reverse("portal:apply_recap", kwargs={"pk": sim.pk}))
+        assert response.status_code == 302
+        assert response.url == reverse("portal:dashboard")
+
 
 class TestConversion:
     def test_convert_creates_application_and_transitions(self, client, user, completed_simulation):
@@ -61,6 +68,20 @@ class TestConversion:
         client.post(reverse("portal:convert_simulation", kwargs={"pk": completed_simulation.pk}))
         client.post(reverse("portal:convert_simulation", kwargs={"pk": completed_simulation.pk}))
         assert Application.objects.filter(simulation=completed_simulation).count() == 1
+
+    def test_convert_rejects_get(self, client, user, completed_simulation):
+        client.force_login(user)
+        response = client.get(reverse("portal:convert_simulation", kwargs={"pk": completed_simulation.pk}))
+        assert response.status_code == 405
+        assert not Application.objects.filter(simulation=completed_simulation).exists()
+
+    def test_convert_rejects_draft_simulation(self, client, user):
+        sim = Simulation.objects.create(user=user, property_price=Decimal(300000))
+        IncomeLine.objects.create(simulation=sim, monthly_amount=Decimal(6000))
+        client.force_login(user)
+        response = client.post(reverse("portal:convert_simulation", kwargs={"pk": sim.pk}))
+        assert response.status_code == 302
+        assert not Application.objects.filter(simulation=sim).exists()
 
 
 class TestApplicationForm:
@@ -91,6 +112,12 @@ class TestApplicationForm:
         )
         assert response.status_code == 302  # bounced back to the form by the guard
         assert Application.objects.get(pk=application.pk).state == ApplicationState.DRAFT
+
+    def test_form_renders_on_get(self, client, user, completed_simulation):
+        client.force_login(user)
+        application = self._application(completed_simulation)
+        response = client.get(reverse("portal:application_form", kwargs={"pk": application.pk}))
+        assert response.status_code == 200
 
     def test_detail_renders(self, client, user, completed_simulation):
         client.force_login(user)

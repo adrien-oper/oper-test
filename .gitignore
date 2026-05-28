@@ -29,3 +29,6 @@ coverage.xml
 # Editor / OS
 .DS_Store
 *.swp
+
+# teatree local tooling artifacts
+.t3-dev-sources

@@ -13,12 +13,23 @@ from django.db import models
 from django_fsm import FSMField, transition
 
 from portal import affordability, enums
+from portal.models.reference import build_reference
 
 
 class SimulationState(models.TextChoices):
     DRAFT = "draft", "Draft"
     COMPLETED = "completed", "Completed"
     CONVERTED = "converted", "Converted to application"
+
+
+class SimulationQuerySet(models.QuerySet):
+    def for_dashboard(self) -> "SimulationQuerySet":
+        """Shape rows for the dashboard list.
+
+        Feasibility reads income/expense lines per row, so prefetch them to keep
+        the page query count flat.
+        """
+        return self.prefetch_related("incomes", "expenses")
 
 
 class Simulation(models.Model):
@@ -66,6 +77,8 @@ class Simulation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    objects = SimulationQuerySet.as_manager()
+
     class Meta:
         ordering = ["-created_at"]
 
@@ -79,10 +92,7 @@ class Simulation(models.Model):
 
     @staticmethod
     def _build_reference() -> str:
-        from django.utils import timezone  # noqa: PLC0415
-
-        stamp = timezone.now().strftime("%y%m%d%H%M%S%f")
-        return f"S{stamp[:14]}"
+        return build_reference("S")
 
     # --- Derived financials -------------------------------------------------
 
@@ -123,7 +133,7 @@ class Simulation(models.Model):
 
     @transition(
         field=state,
-        source=[SimulationState.DRAFT, SimulationState.COMPLETED],
+        source=SimulationState.COMPLETED,
         target=SimulationState.CONVERTED,
     )
     def mark_converted(self) -> None:

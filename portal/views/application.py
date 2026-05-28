@@ -8,8 +8,10 @@ transition, which guards on the applicant details being present.
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 from django_fsm import TransitionNotAllowed
 
 from portal.forms import ApplicationDetailsForm
@@ -22,6 +24,9 @@ def apply_recap(request: HttpRequest, pk: int) -> HttpResponse:
     simulation = get_object_or_404(Simulation, pk=pk, user=request.user)
     if simulation.state == SimulationState.CONVERTED:
         return redirect("portal:application_detail", pk=simulation.application.pk)
+    if simulation.state != SimulationState.COMPLETED:
+        messages.error(request, "Finish your simulation before applying.")
+        return redirect("portal:dashboard")
     return render(
         request,
         "portal/application/recap.html",
@@ -30,14 +35,22 @@ def apply_recap(request: HttpRequest, pk: int) -> HttpResponse:
 
 
 @login_required
+@require_POST
 def convert_simulation(request: HttpRequest, pk: int) -> HttpResponse:
-    """Convert a simulation into an application (guarded, atomic) and open the form."""
+    """Convert a simulation into an application (guarded, atomic) and open the form.
+
+    POST-only: conversion is state-changing, so it must not be reachable via a
+    CSRF-free GET. It is driven by the CSRF-protected recap form.
+    """
     simulation = get_object_or_404(Simulation, pk=pk, user=request.user)
     if simulation.state == SimulationState.CONVERTED:
-        application = simulation.application
-    else:
+        return redirect("portal:application_form", pk=simulation.application.pk)
+    try:
         application = Application.create_from_simulation(simulation)
-        messages.success(request, "Your application has been created. Complete the details below.")
+    except ValidationError:
+        messages.error(request, "This simulation is not ready to convert. Complete it first.")
+        return redirect("portal:apply_recap", pk=simulation.pk)
+    messages.success(request, "Your application has been created. Complete the details below.")
     return redirect("portal:application_form", pk=application.pk)
 
 
@@ -60,15 +73,12 @@ def application_form(request: HttpRequest, pk: int) -> HttpResponse:
 
 
 def _try_submit(request: HttpRequest, application: Application) -> HttpResponse:
-    """Run the guarded submit transition, surfacing guard failures to the user."""
+    """Run the guarded submit-then-review step, surfacing guard failures to the user."""
     try:
-        application.submit()
+        application.submit_for_review()
     except TransitionNotAllowed:
         messages.error(request, "Please complete first name, last name and national number before submitting.")
         return redirect("portal:application_form", pk=application.pk)
-    application.save()
-    application.start_review()
-    application.save()
     messages.success(request, "Your loan request has been submitted and is under review.")
     return redirect("portal:application_detail", pk=application.pk)
 

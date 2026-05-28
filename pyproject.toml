@@ -31,6 +31,9 @@ dev = [
   "ty>=0.0.1a14",
   "django-types>=0.22",
   "teatree",
+  # teatree imports PyYAML in its eval loader but does not declare it; pin it
+  # here so `t3` runs. Remove once teatree ships the dependency itself.
+  "pyyaml>=6.0.3",
 ]
 
 [tool.ruff]
@@ -146,29 +149,26 @@ python-version = "3.13"
 [tool.ty.rules]
 unused-ignore-comment = "error"
 
-# ty cannot resolve Django's metaclass-generated members — reverse relation
-# managers (``self.incomes``), ``get_FOO_display()``, ``<fk>_id`` shadows — nor
-# the FSMField descriptor's ``save``/``transition`` overloads. django-stubs
-# would help but its mypy plugin is unsupported by ty. Scope the affected
-# rules down for the model and migration layers only; everything else stays
-# strict.
+# ty cannot resolve Django's metaclass-generated members — reverse-relation
+# managers (``self.incomes``, ``user.simulations``), ``get_FOO_display()`` and
+# the enum/choices unions — nor the Anthropic SDK's content-block union.
+# django-stubs would help but its mypy plugin is unsupported by ty. Only the
+# ORM/FSM model layer and the views/tasks that walk those reverse managers, and
+# the AI client wrapper, need the two reverse-manager rules relaxed; everything
+# else (forms, config, the rest) stays fully strict.
 [[tool.ty.overrides]]
 include = [
   "portal/models/**",
   "portal/migrations/**",
   "portal/views/**",
-  "portal/ai/**",
+  "portal/ai/analyzer.py",
   "portal/tasks.py",
-  "portal/forms.py",
-  "portal/forms_auth.py",
 ]
 
 [tool.ty.overrides.rules]
 unresolved-attribute = "ignore"
 invalid-argument-type = "ignore"
 no-matching-overload = "ignore"
-unsupported-operator = "ignore"
-invalid-type-form = "ignore"
 
 [tool.uv]
 managed = true

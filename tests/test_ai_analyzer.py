@@ -1,17 +1,26 @@
 """The document analyzer — stub path, mocked live path, mismatch detection."""
 
 import json
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
 from django.test import override_settings
 
-from portal.ai.analyzer import AnalysisResult, ApplicationFacts, analyze_document, detect_mismatches
+from portal.ai.analyzer import (
+    AnalysisResult,
+    ApplicationFacts,
+    InvalidAnalysisError,
+    analyze_document,
+    detect_mismatches,
+)
 
 
 @pytest.fixture
 def facts():
-    return ApplicationFacts(full_name="Ada Lovelace", national_number="92052812928")
+    return ApplicationFacts(
+        full_name="Ada Lovelace", national_number="92052812928", property_price=Decimal("300000.00")
+    )
 
 
 class TestMismatchDetection:
@@ -31,6 +40,23 @@ class TestMismatchDetection:
 
     def test_missing_field_is_not_a_mismatch(self, facts):
         assert detect_mismatches({}, facts) == []
+
+    def test_mismatch_on_property_price(self, facts):
+        mismatches = detect_mismatches({"property_price": "250000"}, facts)
+        assert len(mismatches) == 1
+        assert "property_price" in mismatches[0]
+
+    def test_property_price_matches_despite_formatting(self, facts):
+        assert detect_mismatches({"property_price": "300000.00"}, facts) == []
+        assert detect_mismatches({"property_price": "€ 300,000"}, facts) == []
+
+    @pytest.mark.parametrize("value", ["n/a", "1.2.3", "."])
+    def test_unparseable_property_price_is_ignored(self, facts, value):
+        assert detect_mismatches({"property_price": value}, facts) == []
+
+    def test_property_price_skipped_when_application_has_none(self):
+        facts = ApplicationFacts(full_name="Ada", national_number="1", property_price=None)
+        assert detect_mismatches({"property_price": "999"}, facts) == []
 
 
 class TestStubPath:
@@ -98,19 +124,52 @@ class TestLivePath:
         system_blocks = captured["system"]
         assert system_blocks[0]["cache_control"] == {"type": "ephemeral"}
 
-    def test_live_path_tolerates_unparseable_response(self, facts, mocker):
+    def _client_returning(self, text, mocker):
         fake = SimpleNamespace(
-            messages=SimpleNamespace(
-                create=lambda **_: SimpleNamespace(content=[SimpleNamespace(text="not json")]),
-            ),
+            messages=SimpleNamespace(create=lambda **_: SimpleNamespace(content=[SimpleNamespace(text=text)])),
         )
         mock_anthropic = mocker.MagicMock()
         mock_anthropic.Anthropic.return_value = fake
         mocker.patch.dict("sys.modules", {"anthropic": mock_anthropic})
 
+    def test_live_path_rejects_unparseable_response(self, facts, mocker):
+        self._client_returning("not json", mocker)
+        with (
+            override_settings(ANTHROPIC_API_KEY="sk-test", AI_ANALYSIS_ENABLED=True),
+            pytest.raises(InvalidAnalysisError),
+        ):
+            analyze_document("text", "doc.pdf", facts)
+
+    def test_live_path_rejects_unknown_detected_kind(self, facts, mocker):
+        self._client_returning(json.dumps({"detected_kind": "not_a_kind", "summary": "x"}), mocker)
+        with (
+            override_settings(ANTHROPIC_API_KEY="sk-test", AI_ANALYSIS_ENABLED=True),
+            pytest.raises(InvalidAnalysisError),
+        ):
+            analyze_document("text", "doc.pdf", facts)
+
+    def test_live_path_rejects_non_object_json(self, facts, mocker):
+        self._client_returning(json.dumps(["a", "list"]), mocker)
+        with (
+            override_settings(ANTHROPIC_API_KEY="sk-test", AI_ANALYSIS_ENABLED=True),
+            pytest.raises(InvalidAnalysisError),
+        ):
+            analyze_document("text", "doc.pdf", facts)
+
+    def test_live_path_rejects_missing_detected_kind(self, facts, mocker):
+        self._client_returning(json.dumps({"summary": "no kind here"}), mocker)
+        with (
+            override_settings(ANTHROPIC_API_KEY="sk-test", AI_ANALYSIS_ENABLED=True),
+            pytest.raises(InvalidAnalysisError),
+        ):
+            analyze_document("text", "doc.pdf", facts)
+
+    def test_live_path_tolerates_non_dict_extracted_fields(self, facts, mocker):
+        self._client_returning(json.dumps({"detected_kind": "payslip", "extracted_fields": "oops"}), mocker)
         with override_settings(ANTHROPIC_API_KEY="sk-test", AI_ANALYSIS_ENABLED=True):
             result = analyze_document("text", "doc.pdf", facts)
-        assert result.detected_kind == "other"
+        assert result.extracted_fields == {}
+        assert result.mismatches == []
 
 
 class TestResultDataclass:

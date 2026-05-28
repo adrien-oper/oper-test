@@ -5,9 +5,26 @@ row. Add-row income/expense lines have their own tiny forms. Boundary
 validation lives here; business rules stay on the models.
 """
 
-from django import forms
+from pathlib import Path
 
+from django import forms
+from django.core.files.uploadedfile import UploadedFile
+
+from portal.ai.extraction import SUPPORTED_EXTENSIONS
 from portal.models import Application, Document, ExpenseLine, IncomeLine, Simulation
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+_ALLOWED_CONTENT_TYPES = {
+    ".pdf": {"application/pdf"},
+    ".txt": {"text/plain"},
+    ".csv": {"text/csv", "text/plain"},
+    ".md": {"text/markdown", "text/plain"},
+    ".png": {"image/png"},
+    ".jpg": {"image/jpeg"},
+    ".jpeg": {"image/jpeg"},
+    ".webp": {"image/webp"},
+}
 
 
 class PurposeForm(forms.ModelForm):
@@ -59,6 +76,23 @@ class DocumentUploadForm(forms.ModelForm):
     class Meta:
         model = Document
         fields = ["kind", "file"]
+
+    def clean_file(self) -> UploadedFile:
+        upload: UploadedFile = self.cleaned_data["file"]
+        if upload.size and upload.size > MAX_UPLOAD_BYTES:
+            msg = f"File is too large (max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB)."
+            raise forms.ValidationError(msg)
+
+        suffix = Path(upload.name).suffix.lower()
+        if suffix not in SUPPORTED_EXTENSIONS:
+            allowed = ", ".join(sorted(SUPPORTED_EXTENSIONS))
+            msg = f"Unsupported file type. Allowed: {allowed}."
+            raise forms.ValidationError(msg)
+
+        if upload.content_type and upload.content_type not in _ALLOWED_CONTENT_TYPES[suffix]:
+            msg = "File content type does not match its extension."
+            raise forms.ValidationError(msg)
+        return upload
 
 
 class ApplicationDetailsForm(forms.ModelForm):

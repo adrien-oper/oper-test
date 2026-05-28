@@ -6,11 +6,14 @@ Every transition is guarded; reviewers need a permission to decide.
 """
 
 from django.conf import settings
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
-from django_fsm import FSMField, transition
+from django.utils import timezone
+from django_fsm import FSMField, has_transition_perm, transition
 
 from portal import enums
-from portal.models.simulation import Simulation
+from portal.models.reference import build_reference
+from portal.models.simulation import Simulation, SimulationState
 
 
 class ApplicationState(models.TextChoices):
@@ -66,10 +69,7 @@ class Application(models.Model):
 
     @staticmethod
     def _build_reference() -> str:
-        from django.utils import timezone  # noqa: PLC0415
-
-        stamp = timezone.now().strftime("%y%m%d%H%M%S%f")
-        return f"A{stamp[:14]}"
+        return build_reference("A")
 
     @classmethod
     def create_from_simulation(cls, simulation: Simulation) -> "Application":
@@ -77,8 +77,12 @@ class Application(models.Model):
 
         Creating the application and transitioning the simulation to
         ``converted`` happen in one transaction so a half-converted state
-        can never be observed.
+        can never be observed. Only a ``completed`` simulation may be
+        converted, so the financial-completeness guard is never bypassed.
         """
+        if simulation.state != SimulationState.COMPLETED:
+            msg = "Only a completed simulation can be converted to an application."
+            raise ValidationError(msg)
         with transaction.atomic():
             application = cls.objects.create(user=simulation.user, simulation=simulation)
             simulation.mark_converted()
@@ -98,13 +102,24 @@ class Application(models.Model):
     )
     def submit(self) -> None:
         """Submit the application once the applicant details are filled."""
-        from django.utils import timezone  # noqa: PLC0415
-
         self.submitted_at = timezone.now()
 
     @transition(field=state, source=ApplicationState.SUBMITTED, target=ApplicationState.UNDER_REVIEW)
     def start_review(self) -> None:
         """Move a submitted application into review."""
+
+    def submit_for_review(self) -> None:
+        """Submit then open review as one atomic step.
+
+        Mirrors :meth:`create_from_simulation`: the two guarded transitions and
+        their saves happen in one transaction, so a submitted-but-not-reviewed
+        row can never be observed if either save fails.
+        """
+        with transaction.atomic():
+            self.submit()
+            self.save()
+            self.start_review()
+            self.save()
 
     @transition(
         field=state,
@@ -126,8 +141,21 @@ class Application(models.Model):
         """Reject an application under review (requires decide permission)."""
         self._record_decision(note)
 
-    def _record_decision(self, note: str) -> None:
-        from django.utils import timezone  # noqa: PLC0415
+    def decide(self, actor: settings.AUTH_USER_MODEL, *, approve: bool, note: str = "") -> None:
+        """Approve or reject under review, enforcing the actor's permission.
 
+        The ``permission=`` on the transitions is only metadata; this is the
+        single entry point that checks it against a real actor before running
+        the guarded transition and persisting.
+        """
+        decision = self.approve if approve else self.reject
+        if not has_transition_perm(decision, actor):
+            msg = "You do not have permission to decide on this application."
+            raise PermissionDenied(msg)
+        with transaction.atomic():
+            decision(note=note)
+            self.save()
+
+    def _record_decision(self, note: str) -> None:
         self.decided_at = timezone.now()
         self.decision_note = note

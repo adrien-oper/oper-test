@@ -107,6 +107,33 @@ class TestFinancialSteps:
         assert response.url == reverse("portal:simulation_step", kwargs={"slug": "expenses"})
 
 
+class TestSessionSimulationScoping:
+    def test_anonymous_cannot_resume_a_claimed_simulation(self, client):
+        from django.contrib.auth import get_user_model  # noqa: PLC0415
+
+        owner = get_user_model().objects.create_user(username="owner@example.com", password="Str0ng!pass99")
+        claimed = Simulation.objects.create(user=owner)
+        session = client.session
+        session[wizard.SIMULATION_SESSION_KEY] = claimed.pk
+        session.save()
+        response = client.get(reverse("portal:simulation_step", kwargs={"slug": "report"}))
+        assert response.status_code == 302  # no accessible simulation -> back to start
+
+    def test_user_cannot_resume_another_users_simulation(self, client):
+        from django.contrib.auth import get_user_model  # noqa: PLC0415
+
+        User = get_user_model()  # noqa: N806
+        owner = User.objects.create_user(username="owner@example.com", password="Str0ng!pass99")
+        intruder = User.objects.create_user(username="eve@example.com", password="Str0ng!pass99")
+        claimed = Simulation.objects.create(user=owner)
+        client.force_login(intruder)
+        session = client.session
+        session[wizard.SIMULATION_SESSION_KEY] = claimed.pk
+        session.save()
+        response = client.get(reverse("portal:simulation_step", kwargs={"slug": "report"}))
+        assert response.status_code == 302
+
+
 class TestReport:
     def _ready_simulation(self, client):
         client.post(reverse("portal:simulation_step", kwargs={"slug": "purpose"}), {"purpose": "buy"})

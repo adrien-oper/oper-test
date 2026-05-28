@@ -2,6 +2,7 @@
 
 from django import forms
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AbstractBaseUser
 from django.contrib.auth.password_validation import validate_password
 
 from portal.models import HelpOffice
@@ -33,20 +34,24 @@ class SignupForm(forms.Form):
         validate_password(password)
         return password
 
-    def save(self) -> User:
+    def save(self) -> AbstractBaseUser:
         email = self.cleaned_data["email"]
         return User.objects.create_user(username=email, email=email, password=self.cleaned_data["password"])
 
 
 class PhoneVerificationForm(forms.Form):
-    """Stubbed phone verification — any 6-digit code is accepted."""
+    """Stubbed phone verification.
+
+    Any 6-digit code is accepted, but a valid code is required: verification
+    cannot be skipped.
+    """
 
     phone_number = forms.CharField(label="Mobile number", max_length=20)
-    code = forms.CharField(label="Verification code", min_length=6, max_length=6, required=False)
+    code = forms.CharField(label="Verification code", min_length=6, max_length=6)
 
     def clean_code(self) -> str:
-        code = self.cleaned_data.get("code", "")
-        if code and not code.isdigit():
+        code = self.cleaned_data["code"]
+        if not code.isdigit():
             msg = "The code must be 6 digits."
             raise forms.ValidationError(msg)
         return code

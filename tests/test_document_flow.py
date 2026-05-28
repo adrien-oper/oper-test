@@ -7,8 +7,9 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
+from portal.ai.analyzer import InvalidAnalysisError
 from portal.models import Application, Document, DocumentState, IncomeLine, Simulation
-from portal.tasks import run_document_analysis
+from portal.tasks import analyze_document_task, run_document_analysis
 
 pytestmark = pytest.mark.django_db
 
@@ -48,7 +49,7 @@ class TestUploadView:
         mocker.patch("portal.views.document.analyze_document_task")
         response = client.post(
             reverse("portal:upload_document", kwargs={"pk": application.pk}),
-            {"kind": "payslip", "file": SimpleUploadedFile("payslip.pdf", b"data")},
+            {"kind": "payslip", "file": SimpleUploadedFile("payslip.pdf", b"data", content_type="application/pdf")},
         )
         assert response.status_code == 302
         document = Document.objects.get(application=application)
@@ -96,12 +97,34 @@ class TestAnalysisTask:
         document = Document.objects.get(pk=document.pk)
         assert document.state == DocumentState.FLAGGED
 
-    def test_task_fails_gracefully_on_analyzer_error(self, application, mocker):
+    def test_task_fails_on_invalid_analyzer_output(self, application, mocker):
         document = _upload(application)
-        mocker.patch("portal.tasks.analyze_document", side_effect=RuntimeError("boom"))
+        mocker.patch("portal.tasks.analyze_document", side_effect=InvalidAnalysisError("junk"))
         run_document_analysis(document.pk)
         document = Document.objects.get(pk=document.pk)
         assert document.state == DocumentState.FAILED
+
+    def test_task_fails_on_unsupported_file_type(self, application):
+        document = _upload(application, name="virus.exe", content=b"MZ\x90\x00binary")
+        run_document_analysis(document.pk)
+        document = Document.objects.get(pk=document.pk)
+        assert document.state == DocumentState.FAILED
+
+    def test_transient_error_leaves_document_resumable(self, application, mocker):
+        document = _upload(application)
+        mocker.patch("portal.tasks.analyze_document", side_effect=RuntimeError("network down"))
+        with pytest.raises(RuntimeError):
+            run_document_analysis(document.pk)
+        document = Document.objects.get(pk=document.pk)
+        assert document.state == DocumentState.ANALYZING
+
+    def test_task_resumes_a_stranded_analyzing_document(self, application):
+        document = _upload(application)
+        document.start_analysis()
+        document.save()  # simulate a crash that stranded it in ANALYZING
+        run_document_analysis(document.pk)
+        document = Document.objects.get(pk=document.pk)
+        assert document.state == DocumentState.ANALYZED
 
     def test_task_is_idempotent(self, application):
         document = _upload(application)
@@ -112,3 +135,21 @@ class TestAnalysisTask:
 
     def test_task_ignores_missing_document(self):
         run_document_analysis(999999)  # must not raise
+
+    def test_task_entrypoint_drives_analysis(self, application):
+        document = _upload(application)
+        analyze_document_task.func(document.pk)
+        assert Document.objects.get(pk=document.pk).state == DocumentState.ANALYZED
+
+    def test_finalize_is_a_noop_when_document_left_analyzing_state(self, application, mocker):
+        document = _upload(application)
+
+        def _race_to_failed(*_args, **_kwargs):
+            raced = Document.objects.get(pk=document.pk)
+            raced.fail()  # a concurrent worker finalised it before we could
+            raced.save()
+            return mocker.Mock(detected_kind="payslip", summary="s", extracted_fields={}, mismatches=[], is_stub=True)
+
+        mocker.patch("portal.tasks.analyze_document", side_effect=_race_to_failed)
+        run_document_analysis(document.pk)
+        assert Document.objects.get(pk=document.pk).state == DocumentState.FAILED

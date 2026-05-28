@@ -48,10 +48,18 @@ class TestSimulationLifecycle:
 
     def test_cannot_convert_twice(self):
         sim = _simulation_with_income()
+        sim.complete()
+        sim.save()
         sim.mark_converted()
         sim.save()
         with pytest.raises(TransitionNotAllowed):
             sim.mark_converted()
+
+    def test_cannot_convert_a_draft(self):
+        sim = _simulation_with_income()
+        with pytest.raises(TransitionNotAllowed):
+            sim.mark_converted()
+        assert sim.state == SimulationState.DRAFT
 
 
 class TestSimulationFinancials:

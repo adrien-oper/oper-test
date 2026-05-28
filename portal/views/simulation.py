@@ -26,11 +26,20 @@ _STEP_FORMS = {
 
 
 def _current_simulation(request: HttpRequest) -> Simulation | None:
-    """Return the in-progress simulation for this session, if any."""
+    """Return the in-progress simulation for this session, if any.
+
+    Scoped to the requester: an anonymous visitor only reaches still-unclaimed
+    drafts, and a signed-in user only reaches their own (or a draft they are
+    about to claim). A stale or swapped session id can never surface another
+    user's simulation.
+    """
     sim_id = request.session.get(wizard.SIMULATION_SESSION_KEY)
     if not sim_id:
         return None
-    return Simulation.objects.filter(pk=sim_id).first()
+    accessible = Simulation.objects.filter(user__isnull=True)
+    if request.user.is_authenticated:
+        accessible |= Simulation.objects.filter(user=request.user)
+    return accessible.filter(pk=sim_id).first()
 
 
 def _get_or_start(request: HttpRequest) -> Simulation:

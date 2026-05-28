@@ -8,6 +8,8 @@ optional live Anthropic key). See ``.env.example`` for the knobs.
 import os
 from pathlib import Path
 
+from config.checks import INSECURE_SECRET_KEY
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -20,10 +22,7 @@ def _env_list(name: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
-SECRET_KEY = os.environ.get(
-    "SECRET_KEY",
-    "django-insecure-dev-only-key-change-me-in-production-0r724av6mx",
-)
+SECRET_KEY = os.environ.get("SECRET_KEY", INSECURE_SECRET_KEY)
 
 DEBUG = _env_bool("DEBUG", default=True)
 
@@ -80,7 +79,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "NAME": Path(os.environ.get("SQLITE_PATH", BASE_DIR / "db.sqlite3")),
     },
 }
 
@@ -120,7 +119,12 @@ STORAGES = {
 }
 
 MEDIA_URL = "media/"
-MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_ROOT = Path(os.environ.get("MEDIA_ROOT", BASE_DIR / "media"))
+
+# Defence-in-depth for uploads: reject anything larger than the form's own
+# limit before it is buffered to disk, and keep more than one file in memory.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
