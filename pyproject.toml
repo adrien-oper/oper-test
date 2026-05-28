@@ -7,13 +7,19 @@ requires-python = ">=3.13"
 dependencies = [
   "django>=6.0",
   "django-fsm-2>=4.2",
-  "django-tasks==0.9.0",
+  "django-tasks>=0.12",
+  "django-tasks-db>=0.12",
   "django-htmx>=1.23",
   "django-widget-tweaks>=1.5",
   "anthropic>=0.104",
   "whitenoise>=6.11",
   "gunicorn>=23.0",
 ]
+
+# Register the lightweight teatree overlay. teatree discovers it through this
+# entry point; it is dev-only tooling and never imported by the portal runtime.
+[project.entry-points."teatree.overlays"]
+oper-test = "overlay.overlay:BorrowerPortalOverlay"
 
 [dependency-groups]
 dev = [
@@ -24,6 +30,7 @@ dev = [
   "ruff>=0.14",
   "ty>=0.0.1a14",
   "django-types>=0.22",
+  "teatree",
 ]
 
 [tool.ruff]
@@ -123,7 +130,7 @@ exclude_lines = [
 
 [tool.coverage.run]
 branch = true
-source = [ "portal", "config" ]
+source = [ "portal", "config", "overlay" ]
 omit = [
   "*/migrations/*",
   "*/wsgi.py",
@@ -153,4 +160,17 @@ no-matching-overload = "ignore"
 
 [tool.uv]
 managed = true
-package = false
+package = true
+
+# teatree (the open-source agent CLI) is dev-only: it powers the `t3` overlay
+# tooling and is never imported by the Django app. Pulled from the public repo.
+[tool.uv.sources]
+teatree = { git = "https://github.com/souliane/teatree" }
+
+[build-system]
+requires = [ "uv_build>=0.10" ]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "overlay"
+module-root = ""

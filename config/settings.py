@@ -39,7 +39,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django_tasks",
-    "django_tasks.backends.database",  # durable DB-backed task queue (db_worker)
+    "django_tasks_db",  # durable ORM-backed task queue (db_worker)
     "django_htmx",
     "widget_tweaks",
     "portal",
@@ -88,7 +88,7 @@ DATABASES = {
 # analysis and AI calls do not block the request cycle.
 TASKS = {
     "default": {
-        "BACKEND": "django_tasks.backends.database.backend.DatabaseBackend",
+        "BACKEND": "django_tasks_db.backend.DatabaseBackend",
     },
 }
 

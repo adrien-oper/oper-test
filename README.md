@@ -59,3 +59,14 @@ uv run pytest                 # >= 95% coverage gate
 
 Pre-commit hooks (`prek install`) run ruff, gitleaks, hygiene checks, and a
 pre-push `ty` + `pytest` gate.
+
+## teatree overlay
+
+The repo ships a *lightweight* [teatree](https://github.com/souliane/teatree)
+overlay (`overlay/overlay.py`, registered via a `teatree.overlays` entry point)
+so the project can be developed and reviewed through the `t3` CLI. It only
+teaches teatree where the repo lives, how to run its tests/lint/serve, and how
+to validate PR titles (conventional commits). It intentionally does not bundle
+lifecycle skills, workspace orchestration, or loop slots — those keep teatree's
+defaults. teatree is a dev-only dependency and is never imported by the Django
+app at runtime.
