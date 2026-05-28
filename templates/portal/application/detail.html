@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="content-narrow">
+  <h1>Application #{{ application.reference }}</h1>
+  <div class="panel">
+    <p>Status: <span class="pill">{{ application.get_state_display }}</span></p>
+    <table class="costs-table">
+      <tr><td>Applicant</td><td>{{ application.first_name }} {{ application.last_name }}</td></tr>
+      <tr><td>Employment</td><td>{{ application.get_employment_status_display }}</td></tr>
+    </table>
+  </div>
+
+  <h2>Documents</h2>
+  {% for document in documents %}
+    <div class="sim-card">
+      <div>
+        <div>{{ document.original_filename }}</div>
+        <span class="pill">{{ document.get_state_display }}</span>
+      </div>
+      <a class="btn" href="{% url 'portal:document_detail' pk=document.pk %}">View</a>
+    </div>
+  {% empty %}
+    <p class="lead">No documents uploaded yet.</p>
+  {% endfor %}
+  <a class="btn btn-primary" href="{% url 'portal:upload_document' pk=application.pk %}">Upload a document</a>
+  <a class="btn" href="{% url 'portal:dashboard' %}">Back to dashboard</a>
+</div>
+{% endblock %}

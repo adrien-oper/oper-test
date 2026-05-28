@@ -54,6 +54,8 @@ def choose_office(request: HttpRequest) -> HttpResponse:
     """Select a help office to finish onboarding."""
     if not request.user.is_authenticated:
         return redirect("portal:signup")
+    if not request.session.get(_PENDING_PHONE_KEY):
+        return redirect("portal:verify_phone")
     if request.method == "POST":
         form = HelpOfficeForm(request.POST)
         if form.is_valid():

@@ -11,7 +11,6 @@ from decimal import Decimal, InvalidOperation
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from portal import forms, wizard
@@ -27,11 +26,20 @@ _STEP_FORMS = {
 
 
 def _current_simulation(request: HttpRequest) -> Simulation | None:
-    """Return the in-progress simulation for this session, if any."""
+    """Return the in-progress simulation for this session, if any.
+
+    Scoped to the requester: an anonymous visitor only reaches still-unclaimed
+    drafts, and a signed-in user only reaches their own (or a draft they are
+    about to claim). A stale or swapped session id can never surface another
+    user's simulation.
+    """
     sim_id = request.session.get(wizard.SIMULATION_SESSION_KEY)
     if not sim_id:
         return None
-    return Simulation.objects.filter(pk=sim_id).first()
+    accessible = Simulation.objects.filter(user__isnull=True)
+    if request.user.is_authenticated:
+        accessible |= Simulation.objects.filter(user=request.user)
+    return accessible.filter(pk=sim_id).first()
 
 
 def _get_or_start(request: HttpRequest) -> Simulation:
@@ -227,10 +235,6 @@ def _report(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def apply_to_simulation(request: HttpRequest, pk: int) -> HttpResponse:
-    """Placeholder route the report 'apply' button targets.
-
-    Wired fully in the application chunk; for now it simply lands the user
-    on the dashboard so the report's primary action is never a dead end.
-    """
+    """Entry point for the apply flow — lands on the simulation recap."""
     get_object_or_404(Simulation, pk=pk, user=request.user)
-    return redirect(reverse("portal:dashboard"))
+    return redirect("portal:apply_recap", pk=pk)

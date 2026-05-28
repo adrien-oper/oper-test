@@ -31,9 +31,12 @@ Server-rendered Django 6 + HTMX, no SPA, single-repo monolith.
 - **Fat models**: business logic (affordability maths, transitions, conversion)
   lives on models and a pure `affordability` engine, not in views.
 - **Async** via `django-tasks` (durable database backend, `db_worker`).
-- **AI** via the Anthropic SDK with prompt caching, fully unit-tested against a
-  mock and **env-gated**: with no `ANTHROPIC_API_KEY` the analyzer returns a
-  deterministic, clearly-labelled stub.
+- **AI** via the Anthropic SDK, fully unit-tested against a mock and
+  **env-gated**: with no `ANTHROPIC_API_KEY` the analyzer returns a
+  deterministic, clearly-labelled stub. The static system prompt carries a
+  `cache_control` breakpoint so the API can reuse it once it crosses the
+  model's cache minimum. Malformed model output is rejected, not silently
+  recorded as an "other" classification.
 
 ## Run locally
 
@@ -47,6 +50,32 @@ Optional async worker (documents analyze inline without it in dev):
 
 ```bash
 uv run python manage.py db_worker
+```
+
+## Configuration (12-factor)
+
+Every deploy-sensitive setting is environment-driven; the app runs with all of
+them unset for local development. See `.env.example`.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `SECRET_KEY` | insecure dev key | **Required in production** — a system check fails startup if the default key is used with `DEBUG=False`. |
+| `DEBUG` | `True` | Set `False` in production. |
+| `ALLOWED_HOSTS` | `*` when `DEBUG` | Comma-separated. |
+| `CSRF_TRUSTED_ORIGINS` | empty | Comma-separated `https://…` origins for the deployed host. |
+| `MEDIA_ROOT` | `./media` | Point at a persistent volume in production. |
+| `SQLITE_PATH` | `./db.sqlite3` | Point at a persistent volume in production. |
+| `ANTHROPIC_API_KEY` | unset → stub | Unset keeps the deterministic, free stub analyzer; set it to enable live analysis. |
+
+## Production install
+
+teatree is a **dev-only** dependency (it powers the `t3` overlay and is never
+imported by the Django app). A production install excludes it:
+
+```bash
+uv sync --no-dev          # runtime deps only, no teatree
+uv run python manage.py migrate
+uv run gunicorn config.wsgi
 ```
 
 ## Quality

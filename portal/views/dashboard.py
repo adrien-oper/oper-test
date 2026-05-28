@@ -16,7 +16,7 @@ def dashboard(request: HttpRequest) -> HttpResponse:
         request,
         "portal/dashboard.html",
         {
-            "simulations": request.user.simulations.all(),
+            "simulations": request.user.simulations.for_dashboard(),
             "applications": request.user.applications.all(),
         },
     )

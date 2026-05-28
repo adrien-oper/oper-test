@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="content-narrow">
+  <h1>Review your simulation</h1>
+  <p class="lead">Confirm the details below to turn this simulation into an application.</p>
+  <div class="panel">
+    <table class="costs-table">
+      <tr><td>Reference</td><td>#{{ simulation.reference }}</td></tr>
+      <tr><td>Purpose</td><td>{{ simulation.get_purpose_display }}</td></tr>
+      <tr><td>Property price</td><td>&euro; {{ report.property_price|floatformat:0 }}</td></tr>
+      <tr><td>Loan amount</td><td>&euro; {{ report.loan_amount|floatformat:0 }}</td></tr>
+      <tr><td>Monthly payment</td><td>&euro; {{ report.monthly_payment|floatformat:0 }}</td></tr>
+      <tr><td>Duration</td><td>{{ report.duration_years }} years</td></tr>
+    </table>
+  </div>
+  <form method="post" action="{% url 'portal:convert_simulation' pk=simulation.pk %}">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-primary">Convert to application</button>
+  </form>
+  <a class="btn" href="{% url 'portal:dashboard' %}">Back to dashboard</a>
+</div>
+{% endblock %}

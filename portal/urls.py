@@ -3,7 +3,7 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
 
-from portal.views import auth, dashboard, simulation
+from portal.views import application, auth, dashboard, document, simulation
 
 app_name = "portal"
 
@@ -25,4 +25,10 @@ urlpatterns = [
     path("simulation/expense/add/", simulation.add_expense_line, name="add_expense_line"),
     path("simulation/expense/<int:pk>/delete/", simulation.delete_expense_line, name="delete_expense_line"),
     path("simulation/<int:pk>/apply/", simulation.apply_to_simulation, name="apply_to_simulation"),
+    path("apply/<int:pk>/recap/", application.apply_recap, name="apply_recap"),
+    path("apply/<int:pk>/convert/", application.convert_simulation, name="convert_simulation"),
+    path("application/<int:pk>/", application.application_detail, name="application_detail"),
+    path("application/<int:pk>/form/", application.application_form, name="application_form"),
+    path("application/<int:pk>/documents/upload/", document.upload_document, name="upload_document"),
+    path("document/<int:pk>/", document.document_detail, name="document_detail"),
 ]
