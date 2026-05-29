@@ -56,21 +56,25 @@ def live_url(live_server):
 
 
 @pytest.fixture
-def seeded_offices(db):
-    """Apply the help-office seed migration's data function for a browser test.
+def seeded_office_label(db):
+    """Seed help offices via the migration's data function; return one's label.
 
     ``live_server`` drives each spec in a ``TransactionTestCase``, which flushes
     every table between tests — dropping the rows the seed migration created at
     migrate time. Re-applying the migration's own (idempotent) data function
     restores them while still exercising the real seed logic the deploy relies
     on, rather than a hand-built office.
+
+    The chosen office's label is read here and returned, then the main-thread
+    connection is closed: ``live_server`` serves requests from its own thread
+    and Django forbids sharing a connection across threads, so the test body
+    must not hold an open ``default`` connection while the server runs.
     """
     seed = importlib.import_module("portal.migrations.0003_seed_help_offices")
     seed.seed_offices(apps, None)
-    # ``live_server`` runs the test under ``transactional_db`` and serves
-    # requests from its own thread. Close the connection this fixture opened on
-    # the main thread so the test runner does not later touch it cross-thread.
+    label = str(apps.get_model("portal", "HelpOffice").objects.first())
     connection.close()
+    return label
 
 
 @pytest.fixture

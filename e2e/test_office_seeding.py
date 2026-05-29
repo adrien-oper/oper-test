@@ -22,12 +22,10 @@ def test_fresh_database_seeds_at_least_one_help_office(db):
     assert HelpOffice.objects.exists(), "a freshly-migrated database must seed at least one help office"
 
 
-def test_onboarding_completes_without_creating_an_office(page: Page, live_url, seeded_offices):
-    # No HelpOffice.objects.create(...) here on purpose: ``seeded_offices`` runs
-    # the seed migration's own data function, so this exercises the real seed
-    # logic the deploy depends on, not a hand-built office. (``live_server``
-    # flushes migration rows between transactional tests, so the fixture
-    # re-applies the idempotent seed.)
+def test_onboarding_completes_without_creating_an_office(page: Page, live_url, seeded_office_label):
+    # No HelpOffice.objects.create(...) here on purpose: ``seeded_office_label``
+    # runs the seed migration's own data function, so this exercises the real
+    # seed logic the deploy depends on, not a hand-built office.
     page.goto(f"{live_url}/signup/")
     page.fill("#id_email", "fresh@example.com")
     page.fill("#id_password", "Str0ng!pass99")
@@ -41,8 +39,7 @@ def test_onboarding_completes_without_creating_an_office(page: Page, live_url, s
     page.click("button:has-text('Continue')")
 
     expect(page.get_by_role("heading", name="Choose a help office")).to_be_visible()
-    first_office = HelpOffice.objects.first()
-    page.select_option("#id_office", label=str(first_office))
+    page.select_option("#id_office", label=seeded_office_label)
     page.click("button:has-text('Finish')")
 
     expect(page).to_have_url(f"{live_url}/dashboard/")
