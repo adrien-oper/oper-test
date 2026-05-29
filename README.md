@@ -257,10 +257,14 @@ Where I stopped trusting the AI and verified by hand:
 
 Rough human time: on the order of **1–2 hours** hands-on (framing, the
 deploy-account decision, review and unblocking), against roughly **4–6 hours**
-of active agent build time over 2–3 calendar days. The session telemetry gives a
-measured token total of **≈19.9M (≈96% cache reads)**, which converts to an
-**API-equivalent ≈$19–20** at Opus rates (≈$11–13 on Sonnet) — so a **$50
-metered Opus key is comfortably enough**, with roughly 2.5× headroom; a temporary
-Max plan is a reasonable flat-fee alternative but isn't required. The full
-token-by-model breakdown, the cost arithmetic, wall-clock vs. active time, and
-the budget verdict are in the **[Cost & Feasibility Report](COST.md)**.
+of active agent build time over 2–3 calendar days. This exercise was built
+inside a larger multi-task Claude Code session, so exact cost attribution is
+imprecise (±50%). Measured via `ccusage` (browser and image tokens included),
+the API-equivalent spend is **approx. $310 (range $100–$620)** for the exercise
+alone and **approx. $450 (range $160–$800)** including the supporting teatree
+tooling. A clean from-scratch build of just the portal would realistically cost
+**approx. $75–$100** — so a $50 metered key is optimistic and likely short; a
+temporary Max plan is the lower-stress choice. The per-scope breakdown, a
+per-activity breakdown (working prototype, testing, e2e, bug hunt, teatree
+upstream fixes, code-quality checks), wall-clock vs. active time, and the budget
+verdict are in the **[Cost & Feasibility Report](COST.md)**.
