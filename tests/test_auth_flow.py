@@ -188,3 +188,65 @@ class TestDashboard:
         with django_assert_max_num_queries(8):
             response = client.get(reverse("portal:dashboard"))
         assert response.status_code == 200
+
+
+class TestDashboardCallsToAction:
+    """The dashboard CTA must match the simulation state.
+
+    Offering "Review and apply" on a draft simulation sent the user to the
+    recap, which bounces straight back to the dashboard — so the button looked
+    dead. And a converted application had no link at all, so the user could not
+    open it. Each state now gets the action that actually works.
+    """
+
+    def _completed(self, user):
+        from decimal import Decimal  # noqa: PLC0415
+
+        from portal.models import IncomeLine  # noqa: PLC0415
+
+        sim = Simulation.objects.create(user=user, property_price=Decimal(300000))
+        IncomeLine.objects.create(simulation=sim, monthly_amount=Decimal(5000))
+        sim.complete()
+        sim.save()
+        return sim
+
+    def test_draft_simulation_offers_continue_not_apply(self, client):
+        user = User.objects.create_user(username="ada@example.com", password="Str0ng!pass99")
+        Simulation.objects.create(user=user)  # draft
+        client.force_login(user)
+        response = client.get(reverse("portal:dashboard"))
+        body = response.content.decode()
+        assert "Continue simulation" in body
+        assert "Review and apply" not in body
+
+    def test_completed_simulation_offers_apply(self, client):
+        user = User.objects.create_user(username="ada@example.com", password="Str0ng!pass99")
+        self._completed(user)
+        client.force_login(user)
+        response = client.get(reverse("portal:dashboard"))
+        assert "Review and apply" in response.content.decode()
+
+    def test_application_is_linked_from_dashboard(self, client):
+        from portal.models import Application  # noqa: PLC0415
+
+        user = User.objects.create_user(username="ada@example.com", password="Str0ng!pass99")
+        sim = self._completed(user)
+        application = Application.create_from_simulation(sim)
+        client.force_login(user)
+        response = client.get(reverse("portal:dashboard"))
+        detail_url = reverse("portal:application_detail", kwargs={"pk": application.pk})
+        # The application card is a real link to its detail page, not inert text.
+        assert f'href="{detail_url}"'.encode() in response.content
+        # And the converted simulation links across to the same application.
+        assert "View application" in response.content.decode()
+
+    def test_dashboard_query_count_stays_flat_with_applications(self, client, django_assert_max_num_queries):
+        from portal.models import Application  # noqa: PLC0415
+
+        user = User.objects.create_user(username="ada@example.com", password="Str0ng!pass99")
+        for _ in range(3):
+            Application.create_from_simulation(self._completed(user))
+        client.force_login(user)
+        with django_assert_max_num_queries(10):
+            response = client.get(reverse("portal:dashboard"))
+        assert response.status_code == 200
