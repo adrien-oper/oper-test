@@ -6,20 +6,29 @@ drives the document's FSM to its terminal state.
 It is **resumable**: a document is claimed from either ``uploaded`` or a
 stranded ``analyzing`` state (a crash mid-flight no longer wedges it), and the
 claim runs under a row lock so two workers cannot both drive it. Failures are
-split: output the analyzer judges invalid, or an unsupported file type, is a
-*terminal* ``failed``; transient errors (I/O, network) propagate so the task
-backend can retry, leaving the document resumable in ``analyzing``.
+split: anything a retry cannot fix is *terminal* ``failed`` — output the
+analyzer judges invalid, an unsupported file type, or a permanent backend
+error (a rejected API key, a key without access, an unknown model). Only
+genuinely transient errors (I/O, a network blip, a 5xx) propagate so the task
+backend can retry, leaving the document resumable in ``analyzing``. Without
+this split a bad key would keep the document spinning in ``analyzing`` forever.
 """
 
 from django.db import transaction
 from django_tasks import task
 
-from portal.ai.analyzer import AnalysisResult, ApplicationFacts, InvalidAnalysisError, analyze_document
+from portal.ai.analyzer import (
+    AnalysisResult,
+    AnalyzerBackendError,
+    ApplicationFacts,
+    InvalidAnalysisError,
+    analyze_document,
+)
 from portal.ai.extraction import UnsupportedDocumentError, extract_text
 from portal.models import Document, DocumentAnalysis, DocumentState
 
 _RESUMABLE_STATES = {DocumentState.UPLOADED, DocumentState.ANALYZING}
-_TERMINAL_ANALYSIS_ERRORS = (InvalidAnalysisError, UnsupportedDocumentError)
+_TERMINAL_ANALYSIS_ERRORS = (InvalidAnalysisError, UnsupportedDocumentError, AnalyzerBackendError)
 
 
 def _claim(document_id: int) -> Document | None:
