@@ -10,6 +10,7 @@ from decimal import Decimal
 from functools import cached_property
 
 from django.conf import settings
+from django.core.validators import MinValueValidator
 from django.db import models
 from django_fsm import FSMField, transition
 
@@ -69,11 +70,16 @@ class Simulation(models.Model):
         default=enums.PropertyUsage.OWN_HOME,
     )
 
-    own_funds = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    own_funds = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal("0.00"))],
+    )
     duration_years = models.IntegerField(default=affordability.DEFAULT_DURATION_YEARS)
 
     date_of_birth = models.DateField(null=True, blank=True)
-    dependents = models.IntegerField(default=0)
+    dependents = models.IntegerField(default=0, validators=[MinValueValidator(0)])
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -150,7 +156,12 @@ class IncomeLine(models.Model):
 
     simulation = models.ForeignKey(Simulation, on_delete=models.CASCADE, related_name="incomes")
     income_type = models.CharField(max_length=20, choices=enums.IncomeType.choices, default=enums.IncomeType.SALARY)
-    monthly_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    monthly_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal("0.00"))],
+    )
     borrower_index = models.IntegerField(default=1)
 
     class Meta:
@@ -165,7 +176,12 @@ class ExpenseLine(models.Model):
 
     simulation = models.ForeignKey(Simulation, on_delete=models.CASCADE, related_name="expenses")
     expense_type = models.CharField(max_length=20, choices=enums.ExpenseType.choices, default=enums.ExpenseType.OTHER)
-    monthly_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    monthly_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal("0.00"))],
+    )
 
     class Meta:
         ordering = ["pk"]

@@ -3,7 +3,15 @@
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 
-from portal.forms import MAX_UPLOAD_BYTES, DocumentUploadForm, ProjectForm
+from portal.forms import (
+    MAX_UPLOAD_BYTES,
+    ContributionForm,
+    DocumentUploadForm,
+    ExpenseLineForm,
+    IncomeLineForm,
+    PersonalForm,
+    ProjectForm,
+)
 
 
 class TestProjectFormValidation:
@@ -18,6 +26,42 @@ class TestProjectFormValidation:
         form = ProjectForm(data=self._data(price))
         assert not form.is_valid()
         assert "property_price" in form.errors
+
+
+class TestNonNegativeAmounts:
+    """Money and count fields reject negative input, mirroring the price guard.
+
+    Only ``property_price`` had a non-positive guard; own funds, income,
+    expense and dependants accepted negatives, which then flowed into the
+    affordability maths and the application recap.
+    """
+
+    def test_contribution_rejects_negative_own_funds(self):
+        form = ContributionForm(data={"own_funds": "-5000"})
+        assert not form.is_valid()
+        assert "own_funds" in form.errors
+
+    def test_contribution_accepts_zero_and_positive(self):
+        assert ContributionForm(data={"own_funds": "0"}).is_valid()
+        assert ContributionForm(data={"own_funds": "60000"}).is_valid()
+
+    def test_income_rejects_negative_amount(self):
+        form = IncomeLineForm(data={"income_type": "salary", "monthly_amount": "-3000"})
+        assert not form.is_valid()
+        assert "monthly_amount" in form.errors
+
+    def test_expense_rejects_negative_amount(self):
+        form = ExpenseLineForm(data={"expense_type": "other", "monthly_amount": "-3000"})
+        assert not form.is_valid()
+        assert "monthly_amount" in form.errors
+
+    def test_personal_rejects_negative_dependents(self):
+        form = PersonalForm(data={"dependents": "-2", "date_of_birth": ""})
+        assert not form.is_valid()
+        assert "dependents" in form.errors
+
+    def test_personal_accepts_zero_dependents(self):
+        assert PersonalForm(data={"dependents": "0", "date_of_birth": ""}).is_valid()
 
 
 def _form(upload):
