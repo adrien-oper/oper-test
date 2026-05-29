@@ -24,6 +24,16 @@ class ApplicationState(models.TextChoices):
     REJECTED = "rejected", "Rejected"
 
 
+class ApplicationQuerySet(models.QuerySet):
+    def for_detail(self) -> "ApplicationQuerySet":
+        """Shape an application for its detail page.
+
+        The page lists every document and its analysis, so prefetch the
+        documents and their one-to-one analysis to keep the query count flat.
+        """
+        return self.prefetch_related("documents__analysis")
+
+
 class Application(models.Model):
     """A loan application converted from a simulation.
 
@@ -54,6 +64,8 @@ class Application(models.Model):
     submitted_at = models.DateTimeField(null=True, blank=True)
     decided_at = models.DateTimeField(null=True, blank=True)
     decision_note = models.TextField(blank=True)
+
+    objects = ApplicationQuerySet.as_manager()
 
     class Meta:
         ordering = ["-created_at"]
@@ -104,7 +116,12 @@ class Application(models.Model):
         """Submit the application once the applicant details are filled."""
         self.submitted_at = timezone.now()
 
-    @transition(field=state, source=ApplicationState.SUBMITTED, target=ApplicationState.UNDER_REVIEW)
+    @transition(
+        field=state,
+        source=ApplicationState.SUBMITTED,
+        target=ApplicationState.UNDER_REVIEW,
+        custom={"admin": True, "label": "Start review"},
+    )
     def start_review(self) -> None:
         """Move a submitted application into review."""
 
@@ -126,6 +143,7 @@ class Application(models.Model):
         source=ApplicationState.UNDER_REVIEW,
         target=ApplicationState.APPROVED,
         permission="portal.decide_application",
+        custom={"admin": True, "label": "Approve"},
     )
     def approve(self, *, note: str = "") -> None:
         """Approve an application under review (requires decide permission)."""
@@ -136,6 +154,7 @@ class Application(models.Model):
         source=ApplicationState.UNDER_REVIEW,
         target=ApplicationState.REJECTED,
         permission="portal.decide_application",
+        custom={"admin": True, "label": "Reject"},
     )
     def reject(self, *, note: str = "") -> None:
         """Reject an application under review (requires decide permission)."""
@@ -158,4 +177,7 @@ class Application(models.Model):
 
     def _record_decision(self, note: str) -> None:
         self.decided_at = timezone.now()
-        self.decision_note = note
+        # Keep a note already set on the instance (e.g. typed into the admin
+        # change form) when the transition is called without an explicit one.
+        if note:
+            self.decision_note = note

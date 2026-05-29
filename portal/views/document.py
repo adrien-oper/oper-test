@@ -14,12 +14,13 @@ from django.shortcuts import get_object_or_404, redirect, render
 from portal.forms import DocumentUploadForm
 from portal.models import Application, Document
 from portal.tasks import analyze_document_task
+from portal.views._shared import get_owned_or_404
 
 
 @login_required
 def upload_document(request: HttpRequest, pk: int) -> HttpResponse:
     """Upload a supporting document linked to an application and analyze it."""
-    application = get_object_or_404(Application, pk=pk, user=request.user)
+    application = get_owned_or_404(request, Application, pk)
     if request.method == "POST":
         form = DocumentUploadForm(request.POST, request.FILES)
         if form.is_valid():
@@ -41,7 +42,7 @@ def upload_document(request: HttpRequest, pk: int) -> HttpResponse:
 @login_required
 def document_detail(request: HttpRequest, pk: int) -> HttpResponse:
     """Show a document's analysis status and result."""
-    document = get_object_or_404(Document, pk=pk, application__user=request.user)
+    document = get_object_or_404(Document.objects.for_owner(request.user), pk=pk)
     analysis = getattr(document, "analysis", None)
     return render(
         request,

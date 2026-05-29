@@ -6,6 +6,7 @@ the AI found a mismatch against the application data; ``failed`` means the
 analysis itself errored.
 """
 
+from django.conf import settings
 from django.db import models
 from django_fsm import FSMField, transition
 
@@ -21,6 +22,12 @@ class DocumentState(models.TextChoices):
     FAILED = "failed", "Analysis failed"
 
 
+class DocumentQuerySet(models.QuerySet):
+    def for_owner(self, user: settings.AUTH_USER_MODEL) -> "DocumentQuerySet":
+        """Restrict to documents whose application belongs to *user*."""
+        return self.filter(application__user=user)
+
+
 class Document(models.Model):
     """A supporting document linked to an application."""
 
@@ -31,6 +38,8 @@ class Document(models.Model):
     file = models.FileField(upload_to="documents/%Y/%m/")
     original_filename = models.CharField(max_length=255, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    objects = DocumentQuerySet.as_manager()
 
     class Meta:
         ordering = ["-uploaded_at"]

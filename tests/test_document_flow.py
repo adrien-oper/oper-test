@@ -71,7 +71,7 @@ class TestUploadView:
 class TestAnalysisTask:
     @pytest.fixture(autouse=True)
     def _stub_mode(self, settings):
-        settings.AI_ANALYSIS_ENABLED = False
+        settings.DOCUMENT_ANALYZER_BACKEND = "stub"
 
     def test_task_drives_document_to_analyzed(self, application):
         document = _upload(application)

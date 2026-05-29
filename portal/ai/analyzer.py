@@ -1,15 +1,18 @@
 """Document analysis: classify, extract fields, flag mismatches.
 
-Two interchangeable paths behind one ``analyze_document`` function:
+Three interchangeable backends behind one ``analyze_document`` function:
 
-* **Stub** (default) — deterministic, clearly labelled, no network. Used
-  whenever ``ANTHROPIC_API_KEY`` is unset, so the deployed demo is free and
-  reproducible. Its output is always valid by construction.
-* **Live** — the Anthropic Messages API. The large, static system prompt
+* **stub** (default with no key) — deterministic, clearly labelled, no
+  network. Used whenever no key is configured, so the deployed demo is free
+  and reproducible. Its output is always valid by construction.
+* **sdk** — the Anthropic Messages API. The large, static system prompt
   carries a ``cache_control`` breakpoint so the API may reuse it across calls
-  once it crosses the model's cache minimum.
+  once it crosses the model's cache minimum. The production live path.
+* **cli** — DEV-ONLY: shells out to the ``claude`` CLI in print mode, reusing
+  the developer's Claude Code login. Opt in via ``DOCUMENT_ANALYZER_BACKEND``;
+  it is never the default and fails loudly if the binary is missing.
 
-Both return the same :class:`AnalysisResult` on success. Output the model
+All three return the same :class:`AnalysisResult` on success. Output a backend
 cannot produce validly (unparseable JSON, missing or unknown ``detected_kind``)
 raises :class:`InvalidAnalysisError` so the caller can fail the document
 rather than silently record a bogus "other" classification.
@@ -17,6 +20,8 @@ rather than silently record a bogus "other" classification.
 
 import json
 import re
+import shutil
+import subprocess  # noqa: S404 — dev-only CLI backend; argv is a list, binary resolved via shutil.which
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -45,6 +50,12 @@ Return ONLY a JSON object with this shape:
 Do not include any prose outside the JSON object.
 """
 
+MAX_TOKENS = 1024
+
+STUB = "stub"
+SDK = "sdk"
+CLI = "cli"
+
 _VALID_KINDS = {kind.value for kind in enums.DocumentKind}
 _PRICE_NON_NUMERIC = re.compile(r"[^\d.]")
 
@@ -53,9 +64,13 @@ class InvalidAnalysisError(Exception):
     """The analyzer produced output that cannot be trusted as a result."""
 
 
+class AnalyzerBackendError(Exception):
+    """A configured analyzer backend could not be invoked."""
+
+
 @dataclass
 class AnalysisResult:
-    """Normalised analysis output, identical across the stub and live paths."""
+    """Normalised analysis output, identical across all backends."""
 
     detected_kind: str
     summary: str
@@ -87,8 +102,8 @@ def _normalise_price(value: object) -> Decimal | None:
 def detect_mismatches(extracted: dict[str, Any], facts: ApplicationFacts) -> list[str]:
     """Compare extracted fields against the application, returning mismatches.
 
-    Pure and path-independent, so it is exercised by both the stub and the
-    live result and is trivially unit-tested.
+    Pure and path-independent, so it is exercised by every backend and is
+    trivially unit-tested.
     """
     mismatches: list[str] = []
     expected = {
@@ -108,6 +123,10 @@ def detect_mismatches(extracted: dict[str, Any], facts: ApplicationFacts) -> lis
     return mismatches
 
 
+def _user_prompt(text: str, filename: str) -> str:
+    return f"Filename: {filename}\n\nDocument text:\n{text}"
+
+
 def _stub_result(filename: str, facts: ApplicationFacts) -> AnalysisResult:
     """Deterministic offline analysis derived from the filename.
 
@@ -124,22 +143,22 @@ def _stub_result(filename: str, facts: ApplicationFacts) -> AnalysisResult:
     extracted = {"full_name": facts.full_name, "national_number": facts.national_number}
     return AnalysisResult(
         detected_kind=detected,
-        summary=f"[STUB] Offline analysis of '{filename}'. Set ANTHROPIC_API_KEY for live analysis.",
+        summary=f"[STUB] Offline analysis of '{filename}'. Configure a live backend for real analysis.",
         extracted_fields=extracted,
         mismatches=detect_mismatches(extracted, facts),
         is_stub=True,
-        model_used="stub",
+        model_used=STUB,
     )
 
 
-def _live_result(text: str, filename: str, facts: ApplicationFacts) -> AnalysisResult:
+def _sdk_result(text: str, filename: str, facts: ApplicationFacts) -> AnalysisResult:
     """Analyse via the Anthropic Messages API."""
     import anthropic  # noqa: PLC0415 — optional dependency, only needed on the live path
 
     client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
     response = client.messages.create(
         model=settings.ANTHROPIC_MODEL,
-        max_tokens=1024,
+        max_tokens=MAX_TOKENS,
         system=[
             {
                 "type": "text",
@@ -150,24 +169,65 @@ def _live_result(text: str, filename: str, facts: ApplicationFacts) -> AnalysisR
         messages=[
             {
                 "role": "user",
-                "content": f"Filename: {filename}\n\nDocument text:\n{text}",
+                "content": _user_prompt(text, filename),
             },
         ],
     )
-    payload = _parse_payload(response.content[0].text)
+    return _result_from_payload(_parse_payload(response.content[0].text), facts, model_used=settings.ANTHROPIC_MODEL)
+
+
+def _cli_result(text: str, filename: str, facts: ApplicationFacts) -> AnalysisResult:
+    """Analyse by shelling out to the ``claude`` CLI in print mode (dev only)."""
+    binary = shutil.which(settings.CLAUDE_CLI_PATH)
+    if binary is None:
+        msg = f"The 'cli' analyzer backend needs the {settings.CLAUDE_CLI_PATH!r} binary on PATH."
+        raise AnalyzerBackendError(msg)
+
+    # Feed the prompt on stdin, never as an argv element: it carries the
+    # document text (possibly PII) which argv would expose in process listings.
+    prompt = f"{SYSTEM_PROMPT}\n\n{_user_prompt(text, filename)}"
+    try:
+        completed = subprocess.run(  # noqa: S603 — argv is flags only, binary resolved via shutil.which
+            [binary, "-p", "--output-format", "json"],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        msg = f"The 'claude' CLI exited with status {exc.returncode}."
+        raise AnalyzerBackendError(msg) from exc
+
+    return _result_from_payload(_parse_payload(_cli_text(completed.stdout)), facts, model_used="claude-cli")
+
+
+def _cli_text(stdout: str) -> str:
+    """Pull the assistant's text out of ``claude -p --output-format json``."""
+    try:
+        envelope = json.loads(stdout)
+    except (json.JSONDecodeError, TypeError) as exc:
+        msg = "The 'claude' CLI did not return valid JSON."
+        raise InvalidAnalysisError(msg) from exc
+    if isinstance(envelope, dict) and "result" in envelope:
+        return str(envelope["result"])
+    return stdout
+
+
+def _result_from_payload(payload: dict[str, Any], facts: ApplicationFacts, *, model_used: str) -> AnalysisResult:
     extracted = payload.get("extracted_fields", {})
+    extracted = extracted if isinstance(extracted, dict) else {}
     return AnalysisResult(
         detected_kind=payload["detected_kind"],
         summary=payload.get("summary", ""),
-        extracted_fields=extracted if isinstance(extracted, dict) else {},
-        mismatches=detect_mismatches(extracted if isinstance(extracted, dict) else {}, facts),
+        extracted_fields=extracted,
+        mismatches=detect_mismatches(extracted, facts),
         is_stub=False,
-        model_used=settings.ANTHROPIC_MODEL,
+        model_used=model_used,
     )
 
 
 def _parse_payload(text: str) -> dict[str, Any]:
-    """Parse the model's text block as a valid analysis object or fail loudly."""
+    """Parse a backend's text block as a valid analysis object or fail loudly."""
     try:
         parsed = json.loads(text)
     except (json.JSONDecodeError, TypeError) as exc:
@@ -182,8 +242,26 @@ def _parse_payload(text: str) -> dict[str, Any]:
     return parsed
 
 
+def resolve_backend() -> str:
+    """Pick the analyzer backend, never defaulting to the dev-only ``cli``.
+
+    An explicit ``DOCUMENT_ANALYZER_BACKEND`` wins; otherwise fall back to
+    ``sdk`` when a key is present and ``stub`` when it is not.
+    """
+    configured = (settings.DOCUMENT_ANALYZER_BACKEND or "").strip().lower()
+    if configured:
+        if configured not in {STUB, SDK, CLI}:
+            msg = f"Unknown DOCUMENT_ANALYZER_BACKEND: {configured!r}."
+            raise AnalyzerBackendError(msg)
+        return configured
+    return SDK if settings.ANTHROPIC_API_KEY else STUB
+
+
 def analyze_document(text: str, filename: str, facts: ApplicationFacts) -> AnalysisResult:
-    """Analyse a document, using the live path only when a key is configured."""
-    if settings.AI_ANALYSIS_ENABLED:
-        return _live_result(text, filename, facts)
+    """Analyse a document through the resolved backend."""
+    backend = resolve_backend()
+    if backend == SDK:
+        return _sdk_result(text, filename, facts)
+    if backend == CLI:
+        return _cli_result(text, filename, facts)
     return _stub_result(filename, facts)

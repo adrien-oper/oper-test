@@ -1,7 +1,9 @@
 """Sign-up flow: account creation, phone verification (stub), help office.
 
 On sign-up the anonymous simulation held in the session is claimed by the
-new user, so the journey continues seamlessly into the dashboard.
+new user, so the journey continues seamlessly into the dashboard. The
+onboarding choices (phone verification, help office) are persisted on a
+:class:`~portal.models.reference.BorrowerProfile` so they survive logout.
 """
 
 from django.contrib.auth import login
@@ -10,9 +12,7 @@ from django.shortcuts import redirect, render
 
 from portal import wizard
 from portal.forms_auth import HelpOfficeForm, PhoneVerificationForm, SignupForm
-from portal.models import HelpOffice, Simulation
-
-_PENDING_PHONE_KEY = "pending_phone_verified"
+from portal.models import BorrowerProfile, HelpOffice, Simulation
 
 
 def _claim_session_simulation(request: HttpRequest) -> None:
@@ -29,6 +29,7 @@ def signup(request: HttpRequest) -> HttpResponse:
         if form.is_valid():
             user = form.save()
             login(request, user)
+            BorrowerProfile.objects.get_or_create(user=user)
             _claim_session_simulation(request)
             return redirect("portal:verify_phone")
     else:
@@ -43,7 +44,7 @@ def verify_phone(request: HttpRequest) -> HttpResponse:
     if request.method == "POST":
         form = PhoneVerificationForm(request.POST)
         if form.is_valid():
-            request.session[_PENDING_PHONE_KEY] = True
+            BorrowerProfile.objects.update_or_create(user=request.user, defaults={"phone_verified": True})
             return redirect("portal:choose_office")
     else:
         form = PhoneVerificationForm()
@@ -54,12 +55,14 @@ def choose_office(request: HttpRequest) -> HttpResponse:
     """Select a help office to finish onboarding."""
     if not request.user.is_authenticated:
         return redirect("portal:signup")
-    if not request.session.get(_PENDING_PHONE_KEY):
+    profile, _ = BorrowerProfile.objects.get_or_create(user=request.user)
+    if not profile.phone_verified:
         return redirect("portal:verify_phone")
     if request.method == "POST":
         form = HelpOfficeForm(request.POST)
         if form.is_valid():
-            request.session["help_office_id"] = form.cleaned_data["office"].pk
+            profile.help_office = form.cleaned_data["office"]
+            profile.save(update_fields=["help_office", "updated_at"])
             return redirect("portal:dashboard")
     else:
         form = HelpOfficeForm()
