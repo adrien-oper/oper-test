@@ -7,21 +7,24 @@ office finishes onboarding.
 """
 
 import pytest
+from django.db import connection
 from playwright.sync_api import Page, expect
 
-from portal.models import HelpOffice, Simulation
+from portal.models import Simulation
 
 pytestmark = pytest.mark.e2e
 
 
-def test_signup_through_to_dashboard_claims_the_simulation(page: Page, live_url, db):
-    HelpOffice.objects.create(name="Central", city="Brussels")
-
+def test_signup_through_to_dashboard_claims_the_simulation(page: Page, live_url, seeded_office_label):
+    # The office label comes from the seed migration's own data function.
     # Start an anonymous simulation so sign-up has something to claim.
     page.goto(live_url)
     page.check("input[name=purpose][value=buy]")
     page.click("button[type=submit]:has-text('Next')")
     assert Simulation.objects.filter(user__isnull=True).count() == 1
+    # ``live_server`` serves later requests from its own thread; release the
+    # connection this assertion opened so the server thread does not inherit it.
+    connection.close()
 
     page.goto(f"{live_url}/signup/")
     page.fill("#id_email", "ada@example.com")
@@ -36,7 +39,7 @@ def test_signup_through_to_dashboard_claims_the_simulation(page: Page, live_url,
     page.click("button:has-text('Continue')")
 
     expect(page.get_by_role("heading", name="Choose a help office")).to_be_visible()
-    page.select_option("#id_office", label="Central (Brussels)")
+    page.select_option("#id_office", label=seeded_office_label)
     page.click("button:has-text('Finish')")
 
     expect(page).to_have_url(f"{live_url}/dashboard/")

@@ -5,6 +5,7 @@ row. Add-row income/expense lines have their own tiny forms. Boundary
 validation lives here; business rules stay on the models.
 """
 
+from decimal import Decimal
 from pathlib import Path
 
 from django import forms
@@ -45,6 +46,13 @@ class ProjectForm(forms.ModelForm):
     class Meta:
         model = Simulation
         fields = ["property_type", "region", "property_price", "property_usage"]
+
+    def clean_property_price(self) -> Decimal:
+        price: Decimal = self.cleaned_data["property_price"]
+        if price <= 0:
+            msg = "Enter a property price greater than zero."
+            raise forms.ValidationError(msg)
+        return price
 
 
 class ContributionForm(forms.ModelForm):

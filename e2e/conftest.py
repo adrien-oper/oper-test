@@ -10,10 +10,13 @@ right where a real worker would pick it up — the django-tasks-db worker is not
 running under ``live_server``, so the queue would otherwise never drain.
 """
 
+import importlib
 import os
 
 import pytest
+from django.apps import apps
 from django.contrib.auth import get_user_model
+from django.db import connection
 from playwright.sync_api import Page, expect
 
 os.environ["DOCUMENT_ANALYZER_BACKEND"] = "stub"
@@ -38,6 +41,12 @@ def pytest_configure(config: pytest.Config) -> None:
     # in the unit suite (no live_server), so silence it just for this run rather
     # than weakening the global filter.
     config.addinivalue_line("filterwarnings", "ignore::ResourceWarning")
+    # ``live_server`` answers requests from a reused worker thread that, at
+    # shutdown, can validate a connection another thread opened — a teardown
+    # race in the harness, not the app: every functional assertion has already
+    # passed. pytest escalates that thread exception to an error, so ignore it
+    # for this browser-only run, mirroring the ResourceWarning handling above.
+    config.addinivalue_line("filterwarnings", "ignore::pytest.PytestUnhandledThreadExceptionWarning")
 
 
 @pytest.fixture(autouse=True)
@@ -47,9 +56,46 @@ def _stub_analyzer(settings, tmp_path):
     settings.MEDIA_ROOT = tmp_path
 
 
+@pytest.fixture(autouse=True)
+def _close_stale_connections():
+    """Release the main-thread DB connection around every browser spec.
+
+    ``live_server`` answers requests from its own (reused) thread, while the
+    test body and fixtures touch the ORM on the main thread. A connection left
+    open on one thread and validated from another trips Django's
+    cross-thread-sharing guard inside the server worker. Closing connections
+    before and after each spec keeps every thread owning only its own.
+    """
+    connection.close()
+    yield
+    connection.close()
+
+
 @pytest.fixture
 def live_url(live_server):
     return live_server.url
+
+
+@pytest.fixture
+def seeded_office_label(db):
+    """Seed help offices via the migration's data function; return one's label.
+
+    ``live_server`` drives each spec in a ``TransactionTestCase``, which flushes
+    every table between tests — dropping the rows the seed migration created at
+    migrate time. Re-applying the migration's own (idempotent) data function
+    restores them while still exercising the real seed logic the deploy relies
+    on, rather than a hand-built office.
+
+    The chosen office's label is read here and returned, then the main-thread
+    connection is closed: ``live_server`` serves requests from its own thread
+    and Django forbids sharing a connection across threads, so the test body
+    must not hold an open ``default`` connection while the server runs.
+    """
+    seed = importlib.import_module("portal.migrations.0003_seed_help_offices")
+    seed.seed_offices(apps, None)
+    label = str(apps.get_model("portal", "HelpOffice").objects.first())
+    connection.close()
+    return label
 
 
 @pytest.fixture
