@@ -16,6 +16,7 @@ import os
 import pytest
 from django.apps import apps
 from django.contrib.auth import get_user_model
+from django.db import connection
 from playwright.sync_api import Page, expect
 
 os.environ["DOCUMENT_ANALYZER_BACKEND"] = "stub"
@@ -66,6 +67,10 @@ def seeded_offices(db):
     """
     seed = importlib.import_module("portal.migrations.0003_seed_help_offices")
     seed.seed_offices(apps, None)
+    # ``live_server`` runs the test under ``transactional_db`` and serves
+    # requests from its own thread. Close the connection this fixture opened on
+    # the main thread so the test runner does not later touch it cross-thread.
+    connection.close()
 
 
 @pytest.fixture
