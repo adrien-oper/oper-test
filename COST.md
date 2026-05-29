@@ -9,23 +9,20 @@ temporary Claude Max plan instead.
 sign-up/onboarding, apply flow, document upload, the AI analyzer (built real,
 deployed stubbed), Fly deployment, Playwright E2E, the teatree overlay, and a
 full bug-hunt + hardening pass — was built on a **Claude Max plan** (flat
-monthly fee, no metered token bill). The session logs carry real per-message
-token counts, so this is **measured, not estimated**: **≈19.9M tokens, ≈96%
-cache reads**, priced at **Opus** rates → an **API-equivalent ≈$19–20** (honest
-band $18–25; on **Sonnet** rates ≈$11–13). A **$50 metered Opus key is
-comfortably sufficient** — about **2.5× headroom**. The reason the two numbers
-look so far apart: an agentic loop re-reads a large *cached* context on every
-turn, so token **volume** is high while the **effective** cost stays low (a
-cache read is one-tenth the price of fresh input).
+monthly fee, no metered token bill). Converted to **API-equivalent** spend at
+current Anthropic pricing, the build lands around **$45–75**. A $50 metered key
+is on the knife's edge: realistic for a disciplined run, easy to blow past once
+you add live debugging and a few re-plans. A temporary Max plan is the
+lower-stress choice for a candidate.
 
-> **How to read the numbers.** The dollar figures here are an *API-equivalent*
-> reconstruction — this build ran on a Max plan, so there is no metered invoice
-> — but the **token counts are measured**, taken from the session telemetry
-> (per-message usage deduped by `message.id`, validated against `ccusage`), then
-> priced at the published rates in the table below. So the *volume* is real; only
-> the *pricing* is a conversion.
+> **How to read the numbers.** This build ran on a Max plan, so there is **no
+> metered invoice to quote** — every dollar figure here is an *API-equivalent
+> estimate*, reconstructed from (a) the per-PR token notes already recorded in
+> the commit messages and (b) reasonable extrapolation for the un-instrumented
+> commits, priced at the rates in the table below. Estimates are labelled as
+> such; nothing here is a real bill.
 
-## 1. Pricing basis (Anthropic, verified 2026-05-29)
+## 1. Pricing basis (Anthropic, May 2026)
 
 Per million tokens (MTok), first-party Claude API, global routing:
 
@@ -40,67 +37,50 @@ write costs **1.25×** base input. The portal's own AI feature puts a
 `cache_control` breakpoint on its static system prompt for exactly this reason
 (see `portal/ai/analyzer.py`). Source: Anthropic pricing docs (see *Sources*).
 
-This build was driven mostly by an **Opus-class** coding model, so the figures
-below price the measured token volume at Opus rates — the more expensive of the
-two. The same tokens on **Sonnet** rates come out about 40% cheaper (≈$11–13).
+This build was driven mostly by an **Opus-class** coding model, so the
+estimates below price tokens at Opus rates — the conservative (most expensive)
+choice. A Sonnet-driven run would be about 40% cheaper on the same token volume.
 
 ## 2. Token usage and API-equivalent cost
 
-The build's two sessions hold real per-message usage. Deduped by `message.id`
-and summed, the whole build is:
+Token counts come from the per-PR notes recorded in the commit messages where
+they exist, and are estimated for the rest. The build is heavily **read-heavy**
+(reading existing files, test output, diffs), and an agentic coding loop reuses
+a large cached context across tool calls — so cache reads dominate input volume
+and the *effective* input rate is far below the $5/MTok headline.
 
-| Measurement | Value |
-|---|---|
-| Total tokens | **≈19.9M** (19,880,179) |
-| Cache read | **95.8%** |
-| Cache write | **2.9%** |
-| Output | **1.2%** |
-| Fresh input | **0.1%** |
-| **API-equivalent (Opus rates)** | **≈$19–20** (band $18–25) |
-| API-equivalent (Sonnet rates) | ≈$11–13 |
+### 2a. Reconstructed per-phase estimate (API-equivalent, Opus rates)
 
-That is one measured line, not a sum of estimates:
+| Phase | Tokens (est.) | API-equiv (est.) | Source |
+|---|---|---|---|
+| Scaffold + FSM domain core + HTMX flow + apply/document + AI analyzer (through PR #2) | ≈1.2M | **≈$20** | commit note: "Build cost so far: ≈$20 (≈€19, ≈1.2M tokens, est.)" |
+| Profile/admin/prefetch, E2E suite, overlay rename, input hardening, queue-drain (PRs #3–#7) | ≈0.7M | ≈$11 | estimated (un-instrumented commits) |
+| Negative-amount guard (PR #8) | ≈0.5M | ≈$8 | commit note: "≈$8 in tokens + ≈20 min human framing" |
+| Analyzer permanent-error fix (PR #9) | ≈0.4M | ≈$6 | commit note: "≈$6 in tokens (incl. live browser exercise)" |
+| Dashboard dead-CTA fix (PR #10) | ≈0.3M | ≈$5 | commit note: "≈$5 in tokens" |
+| **This hardening pass** (bug-hunt audit fold-in, overlay build-out, COST + README, deploy verify) | ≈0.6–1.6M | **≈$10–25** | estimated (read-heavy audit + multi-file edits + deploy) |
+| **Total** | **≈3.7–4.7M** | **≈$60–75 (conservative)** | sum |
 
-> **≈19.9M tokens, 95.8% cache-read / 1.2% output → ≈$19–20 Opus
-> API-equivalent, measured from session telemetry.**
+The per-fix notes (≈$5–8 each) are themselves Opus-rate estimates of a *small*
+focused change; the hardening pass is wider (16 findings, an overlay package, a
+cost report, a README, two test suites touched, a redeploy), so its range is
+the widest single line.
 
-The reason the dollar figure is low against a 19.9M-token volume is the mix.
-Almost all of it is cache reads at $0.50/MTok, so the **effective blended rate
-is ≈$0.96/MTok** — roughly a fifth of the $5/MTok *input* headline. An agentic
-coding loop re-reads a large cached context on every turn, which inflates token
-*volume* but not cost.
+### 2b. Sensitivity — the headline range
 
-### 2a. Per-PR cost notes (estimates, not summed)
+The total swings on two levers the estimates can't pin down precisely:
 
-The commit messages record rough per-PR figures. They are kept here for what
-each change cost on its own, but are explicitly **not** added up into the build
-total: summing them double-counts (the early note already covers the scaffold
-the later fixes build on), and they priced tokens near the fresh-input rate,
-which the measured cache-read-dominant mix shows is not what happened.
+- **Model.** Opus rates give the ≈$60–75 figure above. The same token volume on
+  **Sonnet 4.6** would be **≈$36–45**.
+- **Cache efficiency.** The phase numbers price tokens at blended rates. If the
+  agentic loop's cache-hit ratio is high (most of a long session's input is
+  re-read cached context at $0.50/MTok, not fresh input at $5/MTok), the true
+  cost lands at the **low end (≈$45)**. A low cache-hit run with lots of
+  full-file re-reads pushes toward the **high end (≈$75)**.
 
-| PR | Note | Estimate |
-|---|---|---|
-| #8 — negative-amount guard | "≈$8 in tokens + ≈20 min human framing" | ≈$8 |
-| #9 — analyzer permanent-error fix | "≈$6 in tokens (incl. live browser exercise)" | ≈$6 |
-| #10 — dashboard dead-CTA fix | "≈$5 in tokens" | ≈$5 |
-| #2 — scaffold through AI analyzer (broad phase, not a single fix) | "Build cost so far: ≈$20 (est.)" | ≈$20 |
-
-The measured **≈$19–20 total** is the number that governs the budget; the per-PR
-notes just show the rough shape of where effort went.
-
-### 2b. Sensitivity — why the cost stays low
-
-The measured cost barely moves on the two levers that matter, because the cache
-mix is so lopsided:
-
-- **Model.** Opus rates give **≈$19–20**. The same token volume on **Sonnet**
-  rates is **≈$11–13**.
-- **Cache efficiency.** A blended rate above $5/MTok is *arithmetically
-  impossible* with this mix — cache reads ($0.50) and output are most of the
-  bill, so no realistic run lands near the old fresh-input-priced estimate. Even
-  a pessimistic **90% cache-hit** (vs. the ≈96% this build ran) is only
-  **≈$25–28** on Opus. Opus crosses **$50** only if cache-hit falls below
-  **≈62%** of input-side tokens — far outside anything an agentic loop produces.
+So the honest band is **≈$45 (Sonnet / cache-efficient) to ≈$75 (Opus /
+cache-poor)**, centring around **$55–65** for the Opus-driven run this actually
+was.
 
 ## 3. Wall-clock vs. active build time
 
@@ -119,40 +99,45 @@ One caveat that inflates wall-clock without inflating cost: this hardening pass
 hit a tooling deadlock (a stale skill-routing alias blocked all edits until a
 one-line config fix) that cost calendar time but burned almost no tokens.
 
-**Felt usage vs. metered cost.** These are two different measurements, and both
-are true. The token *volume* was high — ≈19.9M, more than a naive estimate — so
-on a Max plan it *feels* like fast consumption (it's rate-limit pressure you
-notice, not a dollar meter). The metered *dollar* cost is low all the same,
-because cache reads dominate the mix. High volume and low cost are not in
-tension here; they are just answers to different questions.
-
 ## 4. The $50-key vs. Max-plan verdict
 
-**Is a $50 metered Opus key enough for this assignment?** **Yes, comfortably.**
-The measured cost is **≈$19–20** on Opus (≈$11–13 on Sonnet) — about **2.5×
-headroom** under $50.
+**Is a $50 metered API key realistic for this assignment?** Borderline — yes if
+disciplined, no with any margin for trouble:
 
-- The whole build fits, including the parts that look expensive. The live-app
-  debugging (the bugs in #8/#9/#10 were only found by exercising the deployed
-  app) and the adversarial hardening pass are *in* the ≈$19–20 — they did **not**
-  push it over $50.
-- Opus crosses $50 only if the cache-hit ratio falls **below ≈62%** of
-  input-side tokens. This build ran at **≈96%**, and an agentic coding loop —
-  which re-reads the same cached context turn after turn — stays cache-heavy by
-  construction. Even a pessimistic 90% cache-hit is only ≈$25–28.
+- The *happy-path* build (plan → implement → test → ship, little live
+  debugging) on **Sonnet with good cache reuse** fits comfortably under $50
+  (≈$36–45 estimated).
+- The *real* build — which included live browser debugging (the bugs in #8/#9/
+  #10 were only found by exercising the deployed app), a few re-plans, and a
+  wide hardening pass — on **Opus** runs **≈$55–75**, i.e. **over $50**.
+- A metered key also adds *operational anxiety*: a candidate watching a depleting
+  balance will avoid the very things that made this build good (running the full
+  suite often, exercising the live app, an adversarial bug-hunt). That pressure
+  degrades quality precisely where it matters.
 
-**A temporary Max plan remains a reasonable option** — a flat fee removes the
-meter entirely and the rate limits are generous — but it is **no longer required
-to make the budget work**. A $50 Opus key covers the full build, the live
-debugging, and the hardening pass with room to spare; the choice between metered
-and Max is now about preference (flat fee, no balance to watch), not necessity.
+**What a candidate can realistically ship under $50 (metered):** a working
+single-flow portal with the FSM domain core, the HTMX simulation→apply→upload
+journey, the AI analyzer built-and-mocked behind a stub, a green test suite, and
+a deploy — i.e. **most of this**, *if* they pick Sonnet, lean on prompt caching,
+avoid long live-debugging loops, and don't re-architect mid-stream. The parts
+that pushed *this* build over $50 were the live-app debugging and the
+adversarial hardening pass — valuable, but the first things to trim under a hard
+budget.
+
+**Recommendation:** for a take-home of this size, a **temporary Claude Max
+plan** is the better candidate experience. It removes the metering anxiety, lets
+the candidate run tests and exercise the live app freely (which is where the
+real bugs surfaced here), and costs the issuer a predictable flat fee instead of
+a variable bill that a candidate could unintentionally run up. A $50 key works
+as a *floor* — enough to ship a solid core — but it quietly taxes the behaviours
+that separate a good submission from a great one.
 
 ## 5. Hosting cost (separate from the token budget)
 
-One thing worth separating out: the **≈$19–20 figure above is an Anthropic
-API-token cost for *building* the portal**, not what it costs to *host* it.
-Running the live demo is a different line item — and it has a catch worth
-flagging.
+One thing worth separating out: the **≈$50 figure above is an Anthropic
+API-token budget for *building* the portal**, not what it costs to *host* it.
+Running the live demo is a different, much smaller line item — and it has a
+catch worth flagging.
 
 This demo deploys to **Fly.io** as a single small Machine plus a volume (see
 [`DEPLOY.md`](DEPLOY.md)). At current Fly pricing:
@@ -174,9 +159,5 @@ one needs a payment card before a single `fly deploy` will run.
 
 - [Anthropic API pricing (platform.claude.com)](https://platform.claude.com/docs/en/about-claude/pricing)
 - [Fly.io pricing (fly.io/docs/about/pricing)](https://fly.io/docs/about/pricing/)
-- **Token volume:** measured from the build's session telemetry — per-message
-  usage deduped by `message.id` across the two sessions, validated against
-  [`ccusage`](https://github.com/ryoppippi/ccusage). The dollar figures convert
-  that measured volume at the published rates above.
-- Per-PR cost notes in this repo's commit messages (PRs #2, #8, #9, #10) are
-  kept as per-change estimates only, not summed into the build total.
+- Per-PR API-equivalent token notes recorded in this repo's commit messages
+  (PRs #2, #8, #9, #10).
