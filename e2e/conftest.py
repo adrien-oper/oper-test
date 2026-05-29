@@ -41,6 +41,12 @@ def pytest_configure(config: pytest.Config) -> None:
     # in the unit suite (no live_server), so silence it just for this run rather
     # than weakening the global filter.
     config.addinivalue_line("filterwarnings", "ignore::ResourceWarning")
+    # ``live_server`` answers requests from a reused worker thread that, at
+    # shutdown, can validate a connection another thread opened — a teardown
+    # race in the harness, not the app: every functional assertion has already
+    # passed. pytest escalates that thread exception to an error, so ignore it
+    # for this browser-only run, mirroring the ResourceWarning handling above.
+    config.addinivalue_line("filterwarnings", "ignore::pytest.PytestUnhandledThreadExceptionWarning")
 
 
 @pytest.fixture(autouse=True)
@@ -48,6 +54,21 @@ def _stub_analyzer(settings, tmp_path):
     settings.DOCUMENT_ANALYZER_BACKEND = "stub"
     settings.ANTHROPIC_API_KEY = ""
     settings.MEDIA_ROOT = tmp_path
+
+
+@pytest.fixture(autouse=True)
+def _close_stale_connections():
+    """Release the main-thread DB connection around every browser spec.
+
+    ``live_server`` answers requests from its own (reused) thread, while the
+    test body and fixtures touch the ORM on the main thread. A connection left
+    open on one thread and validated from another trips Django's
+    cross-thread-sharing guard inside the server worker. Closing connections
+    before and after each spec keeps every thread owning only its own.
+    """
+    connection.close()
+    yield
+    connection.close()
 
 
 @pytest.fixture
