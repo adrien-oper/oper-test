@@ -1,7 +1,14 @@
-"""The document analyzer — stub path, mocked live path, mismatch detection."""
+"""The document analyzer — stub, mocked SDK, mocked CLI, mismatch detection.
+
+Mocking the SDK and CLI network/process boundaries is the sanctioned
+exception to the no-mock rule: the owner has no Anthropic key to test live,
+so the live round-trip is covered by one auto-skipping smoke test instead.
+"""
 
 import json
+import os
 from decimal import Decimal
+from subprocess import CalledProcessError  # noqa: S404 — only the exception type, used to drive a mocked boundary
 from types import SimpleNamespace
 
 import pytest
@@ -9,11 +16,14 @@ from django.test import override_settings
 
 from portal.ai.analyzer import (
     AnalysisResult,
+    AnalyzerBackendError,
     ApplicationFacts,
     InvalidAnalysisError,
     analyze_document,
     detect_mismatches,
+    resolve_backend,
 )
+from portal.enums import DocumentKind
 
 
 @pytest.fixture
@@ -59,45 +69,89 @@ class TestMismatchDetection:
         assert detect_mismatches({"property_price": "999"}, facts) == []
 
 
-class TestStubPath:
+class TestBackendResolution:
+    def test_no_key_resolves_to_stub(self):
+        with override_settings(ANTHROPIC_API_KEY="", DOCUMENT_ANALYZER_BACKEND=""):
+            assert resolve_backend() == "stub"
+
+    def test_key_present_resolves_to_sdk(self):
+        with override_settings(ANTHROPIC_API_KEY="sk-test", DOCUMENT_ANALYZER_BACKEND=""):
+            assert resolve_backend() == "sdk"
+
+    def test_explicit_backend_wins_over_key(self):
+        with override_settings(ANTHROPIC_API_KEY="sk-test", DOCUMENT_ANALYZER_BACKEND="stub"):
+            assert resolve_backend() == "stub"
+
+    def test_cli_is_never_the_default_even_with_key(self):
+        with override_settings(ANTHROPIC_API_KEY="sk-test", DOCUMENT_ANALYZER_BACKEND=""):
+            assert resolve_backend() != "cli"
+
+    def test_unknown_backend_is_rejected(self):
+        with override_settings(DOCUMENT_ANALYZER_BACKEND="telepathy"), pytest.raises(AnalyzerBackendError):
+            resolve_backend()
+
+
+class TestStubBackend:
     def test_stub_used_when_no_key(self, facts):
-        with override_settings(ANTHROPIC_API_KEY="", AI_ANALYSIS_ENABLED=False):
+        with override_settings(ANTHROPIC_API_KEY="", DOCUMENT_ANALYZER_BACKEND=""):
             result = analyze_document("irrelevant", "payslip_january.pdf", facts)
         assert result.is_stub is True
         assert result.detected_kind == "payslip"
         assert "STUB" in result.summary
 
     def test_stub_classifies_from_filename(self, facts):
-        with override_settings(AI_ANALYSIS_ENABLED=False):
+        with override_settings(DOCUMENT_ANALYZER_BACKEND="stub"):
             assert analyze_document("x", "my_id_card.png", facts).detected_kind == "id_card"
             assert analyze_document("x", "random.bin", facts).detected_kind == "other"
 
     def test_stub_echoes_application_data_so_no_false_mismatch(self, facts):
-        with override_settings(AI_ANALYSIS_ENABLED=False):
+        with override_settings(DOCUMENT_ANALYZER_BACKEND="stub"):
             result = analyze_document("x", "payslip.pdf", facts)
         assert result.mismatches == []
 
 
-class TestLivePath:
-    def _fake_client(self, payload):
-        message = SimpleNamespace(content=[SimpleNamespace(text=json.dumps(payload))])
-        messages = SimpleNamespace(create=lambda **_: message)
-        return SimpleNamespace(messages=messages)
+def _fake_sdk(create, mocker):
+    fake = SimpleNamespace(messages=SimpleNamespace(create=create))
+    module = mocker.MagicMock()
+    module.Anthropic.return_value = fake
+    mocker.patch.dict("sys.modules", {"anthropic": module})
+    return module
 
-    def test_live_path_parses_response_and_flags_mismatch(self, facts, mocker):
+
+def _sdk_returning(text, mocker):
+    return _fake_sdk(lambda **_: SimpleNamespace(content=[SimpleNamespace(text=text)]), mocker)
+
+
+class TestSdkBackend:
+    def test_request_construction(self, facts, mocker):
+        captured = {}
+
+        def _create(**kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(content=[SimpleNamespace(text=json.dumps({"detected_kind": "other"}))])
+
+        _fake_sdk(_create, mocker)
+        with override_settings(
+            ANTHROPIC_API_KEY="sk-test", DOCUMENT_ANALYZER_BACKEND="sdk", ANTHROPIC_MODEL="claude-haiku-4-5"
+        ):
+            analyze_document("payslip text", "payslip.pdf", facts)
+
+        assert captured["model"] == "claude-haiku-4-5"
+        assert captured["max_tokens"] == 1024
+        assert captured["system"][0]["cache_control"] == {"type": "ephemeral"}
+        assert "payslip text" in captured["messages"][0]["content"]
+        assert "payslip.pdf" in captured["messages"][0]["content"]
+
+    def test_parses_response_and_flags_mismatch(self, facts, mocker):
         payload = {
             "detected_kind": "payslip",
             "summary": "A payslip.",
             "extracted_fields": {"national_number": "11111111111"},
             "confidence": 0.9,
         }
-        fake = self._fake_client(payload)
-        mock_anthropic = mocker.MagicMock()
-        mock_anthropic.Anthropic.return_value = fake
-        mocker.patch.dict("sys.modules", {"anthropic": mock_anthropic})
-
+        _sdk_returning(json.dumps(payload), mocker)
         with override_settings(
-            ANTHROPIC_API_KEY="sk-test", AI_ANALYSIS_ENABLED=True, ANTHROPIC_MODEL="claude-haiku-4-5"
+            ANTHROPIC_API_KEY="sk-test", DOCUMENT_ANALYZER_BACKEND="sdk", ANTHROPIC_MODEL="claude-haiku-4-5"
         ):
             result = analyze_document("payslip text", "payslip.pdf", facts)
 
@@ -106,70 +160,131 @@ class TestLivePath:
         assert result.detected_kind == "payslip"
         assert result.mismatches  # national number disagrees
 
-    def test_live_path_marks_prompt_cache_breakpoint(self, facts, mocker):
-        captured = {}
-
-        def _create(**kwargs):
-            captured.update(kwargs)
-            return SimpleNamespace(content=[SimpleNamespace(text=json.dumps({"detected_kind": "other"}))])
-
-        fake = SimpleNamespace(messages=SimpleNamespace(create=_create))
-        mock_anthropic = mocker.MagicMock()
-        mock_anthropic.Anthropic.return_value = fake
-        mocker.patch.dict("sys.modules", {"anthropic": mock_anthropic})
-
-        with override_settings(ANTHROPIC_API_KEY="sk-test", AI_ANALYSIS_ENABLED=True):
-            analyze_document("text", "doc.pdf", facts)
-
-        system_blocks = captured["system"]
-        assert system_blocks[0]["cache_control"] == {"type": "ephemeral"}
-
-    def _client_returning(self, text, mocker):
-        fake = SimpleNamespace(
-            messages=SimpleNamespace(create=lambda **_: SimpleNamespace(content=[SimpleNamespace(text=text)])),
-        )
-        mock_anthropic = mocker.MagicMock()
-        mock_anthropic.Anthropic.return_value = fake
-        mocker.patch.dict("sys.modules", {"anthropic": mock_anthropic})
-
-    def test_live_path_rejects_unparseable_response(self, facts, mocker):
-        self._client_returning("not json", mocker)
+    def test_rejects_unparseable_response(self, facts, mocker):
+        _sdk_returning("not json", mocker)
         with (
-            override_settings(ANTHROPIC_API_KEY="sk-test", AI_ANALYSIS_ENABLED=True),
+            override_settings(ANTHROPIC_API_KEY="sk-test", DOCUMENT_ANALYZER_BACKEND="sdk"),
             pytest.raises(InvalidAnalysisError),
         ):
             analyze_document("text", "doc.pdf", facts)
 
-    def test_live_path_rejects_unknown_detected_kind(self, facts, mocker):
-        self._client_returning(json.dumps({"detected_kind": "not_a_kind", "summary": "x"}), mocker)
+    def test_rejects_unknown_detected_kind(self, facts, mocker):
+        _sdk_returning(json.dumps({"detected_kind": "not_a_kind", "summary": "x"}), mocker)
         with (
-            override_settings(ANTHROPIC_API_KEY="sk-test", AI_ANALYSIS_ENABLED=True),
+            override_settings(ANTHROPIC_API_KEY="sk-test", DOCUMENT_ANALYZER_BACKEND="sdk"),
             pytest.raises(InvalidAnalysisError),
         ):
             analyze_document("text", "doc.pdf", facts)
 
-    def test_live_path_rejects_non_object_json(self, facts, mocker):
-        self._client_returning(json.dumps(["a", "list"]), mocker)
+    def test_rejects_non_object_json(self, facts, mocker):
+        _sdk_returning(json.dumps(["a", "list"]), mocker)
         with (
-            override_settings(ANTHROPIC_API_KEY="sk-test", AI_ANALYSIS_ENABLED=True),
+            override_settings(ANTHROPIC_API_KEY="sk-test", DOCUMENT_ANALYZER_BACKEND="sdk"),
             pytest.raises(InvalidAnalysisError),
         ):
             analyze_document("text", "doc.pdf", facts)
 
-    def test_live_path_rejects_missing_detected_kind(self, facts, mocker):
-        self._client_returning(json.dumps({"summary": "no kind here"}), mocker)
+    def test_rejects_missing_detected_kind(self, facts, mocker):
+        _sdk_returning(json.dumps({"summary": "no kind here"}), mocker)
         with (
-            override_settings(ANTHROPIC_API_KEY="sk-test", AI_ANALYSIS_ENABLED=True),
+            override_settings(ANTHROPIC_API_KEY="sk-test", DOCUMENT_ANALYZER_BACKEND="sdk"),
             pytest.raises(InvalidAnalysisError),
         ):
             analyze_document("text", "doc.pdf", facts)
 
-    def test_live_path_tolerates_non_dict_extracted_fields(self, facts, mocker):
-        self._client_returning(json.dumps({"detected_kind": "payslip", "extracted_fields": "oops"}), mocker)
-        with override_settings(ANTHROPIC_API_KEY="sk-test", AI_ANALYSIS_ENABLED=True):
+    def test_tolerates_non_dict_extracted_fields(self, facts, mocker):
+        _sdk_returning(json.dumps({"detected_kind": "payslip", "extracted_fields": "oops"}), mocker)
+        with override_settings(ANTHROPIC_API_KEY="sk-test", DOCUMENT_ANALYZER_BACKEND="sdk"):
             result = analyze_document("text", "doc.pdf", facts)
         assert result.extracted_fields == {}
         assert result.mismatches == []
+
+    def test_propagates_api_and_rate_limit_errors(self, facts, mocker):
+        def _raise(**_):
+            msg = "rate limited"
+            raise RuntimeError(msg)
+
+        _fake_sdk(_raise, mocker)
+        with (
+            override_settings(ANTHROPIC_API_KEY="sk-test", DOCUMENT_ANALYZER_BACKEND="sdk"),
+            pytest.raises(RuntimeError, match="rate limited"),
+        ):
+            analyze_document("text", "doc.pdf", facts)
+
+
+def _cli_payload(result_text):
+    return json.dumps({"type": "result", "result": result_text})
+
+
+class TestCliBackend:
+    def test_argv_construction_and_parsing(self, facts, mocker):
+        captured = {}
+
+        def _run(argv, **kwargs):
+            captured["argv"] = argv
+            captured["kwargs"] = kwargs
+            payload = json.dumps({"detected_kind": "payslip", "summary": "A payslip.", "extracted_fields": {}})
+            return SimpleNamespace(stdout=_cli_payload(payload), returncode=0)
+
+        mocker.patch("portal.ai.analyzer.shutil.which", return_value="/usr/local/bin/claude")
+        mocker.patch("portal.ai.analyzer.subprocess.run", side_effect=_run)
+
+        with override_settings(DOCUMENT_ANALYZER_BACKEND="cli", CLAUDE_CLI_PATH="claude"):
+            result = analyze_document("payslip text", "payslip.pdf", facts)
+
+        argv = captured["argv"]
+        assert argv == ["/usr/local/bin/claude", "-p", "--output-format", "json"]
+        # The document text (possibly PII) goes on stdin, never argv.
+        assert "payslip text" not in " ".join(argv)
+        assert "payslip text" in captured["kwargs"]["input"]
+        assert "payslip.pdf" in captured["kwargs"]["input"]
+        assert captured["kwargs"]["check"] is True
+        assert result.is_stub is False
+        assert result.model_used == "claude-cli"
+        assert result.detected_kind == "payslip"
+
+    def test_missing_binary_fails_loudly(self, facts, mocker):
+        mocker.patch("portal.ai.analyzer.shutil.which", return_value=None)
+        with (
+            override_settings(DOCUMENT_ANALYZER_BACKEND="cli"),
+            pytest.raises(AnalyzerBackendError, match="on PATH"),
+        ):
+            analyze_document("text", "doc.pdf", facts)
+
+    def test_non_zero_exit_fails_loudly(self, facts, mocker):
+        mocker.patch("portal.ai.analyzer.shutil.which", return_value="/usr/local/bin/claude")
+        mocker.patch(
+            "portal.ai.analyzer.subprocess.run",
+            side_effect=CalledProcessError(returncode=2, cmd=["claude"]),
+        )
+        with (
+            override_settings(DOCUMENT_ANALYZER_BACKEND="cli"),
+            pytest.raises(AnalyzerBackendError, match="status 2"),
+        ):
+            analyze_document("text", "doc.pdf", facts)
+
+    def test_malformed_envelope_json_is_rejected(self, facts, mocker):
+        mocker.patch("portal.ai.analyzer.shutil.which", return_value="/usr/local/bin/claude")
+        mocker.patch(
+            "portal.ai.analyzer.subprocess.run",
+            return_value=SimpleNamespace(stdout="not json at all", returncode=0),
+        )
+        with (
+            override_settings(DOCUMENT_ANALYZER_BACKEND="cli"),
+            pytest.raises(InvalidAnalysisError),
+        ):
+            analyze_document("text", "doc.pdf", facts)
+
+    def test_plain_json_result_without_envelope_is_parsed(self, facts, mocker):
+        payload = json.dumps({"detected_kind": "id_card", "summary": "An id card.", "extracted_fields": {}})
+        mocker.patch("portal.ai.analyzer.shutil.which", return_value="/usr/local/bin/claude")
+        mocker.patch(
+            "portal.ai.analyzer.subprocess.run",
+            return_value=SimpleNamespace(stdout=payload, returncode=0),
+        )
+        with override_settings(DOCUMENT_ANALYZER_BACKEND="cli"):
+            result = analyze_document("text", "id.png", facts)
+        assert result.detected_kind == "id_card"
 
 
 class TestResultDataclass:
@@ -177,3 +292,16 @@ class TestResultDataclass:
         result = AnalysisResult(detected_kind="other", summary="s", extracted_fields={})
         assert result.is_stub is True
         assert result.mismatches == []
+
+
+@pytest.mark.skipif(not os.environ.get("ANTHROPIC_API_KEY"), reason="live API key not configured")
+class TestLiveSmoke:
+    def test_live_round_trip_returns_a_valid_kind(self, facts):
+        with override_settings(DOCUMENT_ANALYZER_BACKEND="sdk"):
+            result = analyze_document(
+                "Payslip for Ada Lovelace, national number 92052812928, gross monthly 6000 EUR.",
+                "payslip.txt",
+                facts,
+            )
+        assert result.is_stub is False
+        assert result.detected_kind in DocumentKind.values

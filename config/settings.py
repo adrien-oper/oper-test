@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     "django_tasks",
     "django_tasks_db",  # durable ORM-backed task queue (db_worker)
     "django_htmx",
+    "django_fsm",  # ships the admin FSM-transition change-form templates
     "widget_tweaks",
     "portal",
 ]
@@ -138,7 +139,20 @@ LOGOUT_REDIRECT_URL = "portal:simulation_start"
 # is present, so the deployed demo runs safely without a metered bill.
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5")
-AI_ANALYSIS_ENABLED = bool(ANTHROPIC_API_KEY)
+
+# Document analyzer backend. Resolved lazily by portal.ai.analyzer:
+#   stub — deterministic, offline, no key (tests/CI + the demo deploy);
+#   sdk  — the Anthropic Messages API (production, needs ANTHROPIC_API_KEY);
+#   cli  — DEV-ONLY: shells out to the `claude` CLI in print mode, reusing the
+#          developer's Claude Code login. Never the production default: a
+#          deployed container has no `claude` binary. Opt in explicitly.
+# Unset resolves to `sdk` when a key is present, else `stub`.
+DOCUMENT_ANALYZER_BACKEND = os.environ.get("DOCUMENT_ANALYZER_BACKEND", "")
+CLAUDE_CLI_PATH = os.environ.get("CLAUDE_CLI_PATH", "claude")
+
+# Let admin reviewers drive the application FSM (start_review/approve/reject)
+# from the change page; the transitions' own ``permission=`` still gates them.
+FSM_ADMIN_FORCE_PERMIT = True
 
 # --- Production hardening (only bites when DEBUG is off) ---
 if not DEBUG:

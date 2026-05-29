@@ -7,6 +7,7 @@ guarded FSM transition, never a manual status write.
 """
 
 from decimal import Decimal
+from functools import cached_property
 
 from django.conf import settings
 from django.db import models
@@ -96,11 +97,11 @@ class Simulation(models.Model):
 
     # --- Derived financials -------------------------------------------------
 
-    @property
+    @cached_property
     def total_monthly_income(self) -> Decimal:
         return sum((line.monthly_amount for line in self.incomes.all()), Decimal("0.00"))
 
-    @property
+    @cached_property
     def total_monthly_expenses(self) -> Decimal:
         return sum((line.monthly_amount for line in self.expenses.all()), Decimal("0.00"))
 
@@ -152,6 +153,9 @@ class IncomeLine(models.Model):
     monthly_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
     borrower_index = models.IntegerField(default=1)
 
+    class Meta:
+        ordering = ["pk"]
+
     def __str__(self) -> str:
         return f"{self.get_income_type_display()}: {self.monthly_amount}"
 
@@ -162,6 +166,9 @@ class ExpenseLine(models.Model):
     simulation = models.ForeignKey(Simulation, on_delete=models.CASCADE, related_name="expenses")
     expense_type = models.CharField(max_length=20, choices=enums.ExpenseType.choices, default=enums.ExpenseType.OTHER)
     monthly_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+
+    class Meta:
+        ordering = ["pk"]
 
     def __str__(self) -> str:
         return f"{self.get_expense_type_display()}: {self.monthly_amount}"

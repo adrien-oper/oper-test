@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 
 from portal import wizard
-from portal.models import HelpOffice, Simulation
+from portal.models import BorrowerProfile, HelpOffice, Simulation
 
 pytestmark = pytest.mark.django_db
 
@@ -106,7 +106,7 @@ class TestPhoneAndOffice:
         response = client.post(reverse("portal:choose_office"), {"office": office.pk})
         assert response.status_code == 302
         assert response.url == reverse("portal:verify_phone")
-        assert "help_office_id" not in client.session
+        assert BorrowerProfile.objects.get(user__username="ada@example.com").help_office is None
 
     def test_choose_office_requires_login(self, client):
         response = client.get(reverse("portal:choose_office"))
@@ -127,7 +127,39 @@ class TestPhoneAndOffice:
         response = client.post(reverse("portal:choose_office"), {"office": office.pk})
         assert response.status_code == 302
         assert response.url == reverse("portal:dashboard")
-        assert client.session["help_office_id"] == office.pk
+        profile = BorrowerProfile.objects.get(user__username="ada@example.com")
+        assert profile.help_office == office
+        assert profile.onboarding_complete is True
+
+
+class TestBorrowerProfile:
+    def test_signup_creates_a_profile(self, client):
+        client.post(
+            reverse("portal:signup"),
+            {"email": "ada@example.com", "password": "Str0ng!pass99", "accept_terms": "on", "accept_privacy": "on"},
+        )
+        profile = BorrowerProfile.objects.get(user__username="ada@example.com")
+        assert profile.phone_verified is False
+        assert profile.help_office is None
+        assert profile.onboarding_complete is False
+
+    def test_verify_phone_persists_to_profile(self, client):
+        client.post(
+            reverse("portal:signup"),
+            {"email": "ada@example.com", "password": "Str0ng!pass99", "accept_terms": "on", "accept_privacy": "on"},
+        )
+        client.post(reverse("portal:verify_phone"), {"phone_number": "+32470123456", "code": "123456"})
+        assert BorrowerProfile.objects.get(user__username="ada@example.com").phone_verified is True
+
+    def test_help_office_persists_across_logout(self, client, office):
+        client.post(
+            reverse("portal:signup"),
+            {"email": "ada@example.com", "password": "Str0ng!pass99", "accept_terms": "on", "accept_privacy": "on"},
+        )
+        client.post(reverse("portal:verify_phone"), {"phone_number": "+32470123456", "code": "123456"})
+        client.post(reverse("portal:choose_office"), {"office": office.pk})
+        client.logout()
+        assert BorrowerProfile.objects.get(user__username="ada@example.com").help_office == office
 
 
 class TestDashboard:

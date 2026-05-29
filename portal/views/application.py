@@ -10,18 +10,19 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 from django_fsm import TransitionNotAllowed
 
 from portal.forms import ApplicationDetailsForm
 from portal.models import Application, Simulation, SimulationState
+from portal.views._shared import get_owned_or_404
 
 
 @login_required
 def apply_recap(request: HttpRequest, pk: int) -> HttpResponse:
     """Show a recap of the simulation before converting it to an application."""
-    simulation = get_object_or_404(Simulation, pk=pk, user=request.user)
+    simulation = get_owned_or_404(request, Simulation, pk)
     if simulation.state == SimulationState.CONVERTED:
         return redirect("portal:application_detail", pk=simulation.application.pk)
     if simulation.state != SimulationState.COMPLETED:
@@ -42,7 +43,7 @@ def convert_simulation(request: HttpRequest, pk: int) -> HttpResponse:
     POST-only: conversion is state-changing, so it must not be reachable via a
     CSRF-free GET. It is driven by the CSRF-protected recap form.
     """
-    simulation = get_object_or_404(Simulation, pk=pk, user=request.user)
+    simulation = get_owned_or_404(request, Simulation, pk)
     if simulation.state == SimulationState.CONVERTED:
         return redirect("portal:application_form", pk=simulation.application.pk)
     try:
@@ -57,7 +58,7 @@ def convert_simulation(request: HttpRequest, pk: int) -> HttpResponse:
 @login_required
 def application_form(request: HttpRequest, pk: int) -> HttpResponse:
     """The multi-step application form (personal/employment details)."""
-    application = get_object_or_404(Application, pk=pk, user=request.user)
+    application = get_owned_or_404(request, Application, pk)
     if request.method == "POST":
         form = ApplicationDetailsForm(request.POST, instance=application)
         if form.is_valid():
@@ -86,7 +87,7 @@ def _try_submit(request: HttpRequest, application: Application) -> HttpResponse:
 @login_required
 def application_detail(request: HttpRequest, pk: int) -> HttpResponse:
     """Show an application's status and its uploaded documents."""
-    application = get_object_or_404(Application, pk=pk, user=request.user)
+    application = get_owned_or_404(request, Application.objects.for_detail(), pk)
     return render(
         request,
         "portal/application/detail.html",

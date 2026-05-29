@@ -2,6 +2,7 @@
 
 import secrets
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -30,3 +31,27 @@ class HelpOffice(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.city})"
+
+
+class BorrowerProfile(models.Model):
+    """Persistent onboarding state for a signed-up borrower.
+
+    The sign-up flow used to keep the chosen help office and the phone
+    verification flag in the session, so they were lost on logout. This
+    one-to-one row makes those choices durable.
+    """
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="borrower_profile")
+    help_office = models.ForeignKey(
+        HelpOffice, null=True, blank=True, on_delete=models.SET_NULL, related_name="borrowers"
+    )
+    phone_verified = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"Profile of {self.user} (verified={self.phone_verified})"
+
+    @property
+    def onboarding_complete(self) -> bool:
+        return self.phone_verified and self.help_office_id is not None

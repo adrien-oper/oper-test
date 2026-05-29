@@ -76,11 +76,13 @@ lint.extend-ignore = [
   "Q004",
   "W191",
 ]
+# Auto-generated migration boilerplate: long generated lines and unannotated
+# Migration classes are written by Django, not by hand. (RUF012 is already in
+# the global ignore list.)
 lint.per-file-ignores."**/migrations/*.py" = [
   "ANN",
   "ARG001",
   "E501",
-  "RUF012",
 ]
 # Django-generated entrypoint boilerplate — left as the framework writes it.
 lint.per-file-ignores."manage.py" = [ "ANN201", "EM101", "PLC0415", "TRY003" ]
@@ -93,12 +95,9 @@ lint.per-file-ignores."tests/**/*.py" = [
   "ARG001",
   "ARG002",
   "PLR2004", # magic value in tests
-  "PLR0913", # test helpers take many fixtures
   "PLR6301", # no-self-use (test methods)
   "S101",    # assert
-  "S105",
-  "S106",
-  "SLF001",  # private member access
+  "S106",    # hardcoded password in test fixtures
 ]
 lint.fixable = [ "ALL" ]
 lint.unfixable = [ "F401", "F811" ]
@@ -150,19 +149,21 @@ python-version = "3.13"
 unused-ignore-comment = "error"
 
 # ty cannot resolve Django's metaclass-generated members — reverse-relation
-# managers (``self.incomes``, ``user.simulations``), ``get_FOO_display()`` and
-# the enum/choices unions — nor the Anthropic SDK's content-block union.
-# django-stubs would help but its mypy plugin is unsupported by ty. Only the
-# ORM/FSM model layer and the views/tasks that walk those reverse managers, and
-# the AI client wrapper, need the two reverse-manager rules relaxed; everything
-# else (forms, config, the rest) stays fully strict.
+# managers (``simulation.incomes``, ``user.simulations``), ``get_FOO_display()``,
+# the ``save(*args, **kwargs)`` signature, the ``CharField(choices=…)`` overload
+# in the migrations, the choices unions, and the Anthropic SDK content-block
+# union. django-stubs would help but its mypy plugin is unsupported by ty. Only
+# the model layer, the migrations, the analyzer, and the views that walk those
+# reverse managers need the rules relaxed; everything else (admin, forms, the
+# shared view helper, config) stays fully strict.
 [[tool.ty.overrides]]
 include = [
   "portal/models/**",
   "portal/migrations/**",
-  "portal/views/**",
   "portal/ai/analyzer.py",
-  "portal/tasks.py",
+  "portal/views/application.py",
+  "portal/views/dashboard.py",
+  "portal/views/simulation.py",
 ]
 
 [tool.ty.overrides.rules]

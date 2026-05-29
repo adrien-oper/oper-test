@@ -125,3 +125,23 @@ class TestApplicationForm:
         response = client.get(reverse("portal:application_detail", kwargs={"pk": application.pk}))
         assert response.status_code == 200
         assert application.reference.encode() in response.content
+
+    def test_detail_query_count_flat_across_documents(
+        self, client, user, completed_simulation, django_assert_max_num_queries
+    ):
+        from django.core.files.uploadedfile import SimpleUploadedFile  # noqa: PLC0415
+
+        from portal.models import Document, DocumentAnalysis  # noqa: PLC0415
+
+        application = self._application(completed_simulation)
+        for index in range(4):
+            doc = Document.objects.create(
+                application=application,
+                file=SimpleUploadedFile(f"doc{index}.pdf", b"x"),
+                original_filename=f"doc{index}.pdf",
+            )
+            DocumentAnalysis.objects.create(document=doc, detected_kind="payslip")
+        client.force_login(user)
+        with django_assert_max_num_queries(8):
+            response = client.get(reverse("portal:application_detail", kwargs={"pk": application.pk}))
+        assert response.status_code == 200
