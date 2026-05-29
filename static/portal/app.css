@@ -138,4 +138,6 @@ h1 { font-size: 1.9rem; margin: 0 0 8px; }
 .sim-card .ref { color: var(--muted); font-size: 0.85rem; }
 .sim-card .price { font-size: 1.3rem; font-weight: 700; }
 .sim-card .btn { width: auto; margin: 0; padding: 12px 22px; }
+.sim-card-link { text-decoration: none; color: inherit; }
+.sim-card-link:hover { border-color: var(--ink); }
 .help-link { color: var(--ink); }

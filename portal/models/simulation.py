@@ -29,9 +29,10 @@ class SimulationQuerySet(models.QuerySet):
         """Shape rows for the dashboard list.
 
         Feasibility reads income/expense lines per row, so prefetch them to keep
-        the page query count flat.
+        the page query count flat. A converted row links to its application, so
+        pull that one-to-one in the same go rather than per row.
         """
-        return self.prefetch_related("incomes", "expenses")
+        return self.prefetch_related("incomes", "expenses", "application")
 
 
 class Simulation(models.Model):

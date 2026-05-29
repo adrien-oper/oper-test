@@ -10,9 +10,11 @@
       <span class="pill pill-good">{{ simulation.get_purpose_display }}</span>
     </div>
     {% if simulation.state == "converted" %}
-      <span class="pill">Application started</span>
-    {% else %}
+      <a class="btn" href="{% url 'portal:application_detail' pk=simulation.application.pk %}">View application</a>
+    {% elif simulation.state == "completed" %}
       <a class="btn btn-primary" href="{% url 'portal:apply_to_simulation' pk=simulation.pk %}">Review and apply</a>
+    {% else %}
+      <a class="btn" href="{% url 'portal:simulation_step' slug='report' %}">Continue simulation</a>
     {% endif %}
   </div>
 {% empty %}
@@ -23,12 +25,13 @@
 {% if applications %}
   <h1 style="margin-top:40px">Applications</h1>
   {% for application in applications %}
-    <div class="sim-card">
+    <a class="sim-card sim-card-link" href="{% url 'portal:application_detail' pk=application.pk %}">
       <div>
         <div class="ref">#{{ application.reference }}</div>
         <span class="pill">{{ application.get_state_display }}</span>
       </div>
-    </div>
+      <span class="btn">View</span>
+    </a>
   {% endfor %}
 {% endif %}
 {% endblock %}
