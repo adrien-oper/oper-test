@@ -187,6 +187,49 @@ agent CLI, in two honest ways:
   backends — those do not apply to a single-repo SQLite project. teatree stays a
   dev-only dependency, never imported by the Django app at runtime.
 
+### Install the overlay into an existing `t3`
+
+If you already run teatree's `t3` (installed as a `uv` tool), register this
+overlay's entry point alongside it with one command — no separate `t3`, and the
+existing teatree install stays editable from its own checkout:
+
+```bash
+uv tool install teatree --with-editable /path/to/oper-test
+```
+
+Verify the entry point is discovered:
+
+```bash
+t3 info | grep borrower-portal          # lists config.settings + the repo path
+python -c "from importlib.metadata import entry_points; \
+  print([e.value for e in entry_points(group='teatree.overlays') if e.name=='borrower-portal'])"
+# -> ['overlay.overlay:BorrowerPortalOverlay']
+```
+
+The overlay also reads an `[overlays.borrower-portal]` table in `~/.teatree.toml`
+(`path`, `protected_branches`, `mode`) for per-machine settings.
+
+### What the overlay drives
+
+The overlay implements the `OverlayBase` hooks that back the full local dev
+lifecycle — these are the exact commands used to verify it:
+
+```bash
+t3 borrower-portal worktree smoke-test    # overlay loads, CLI/DB/hooks/imports OK
+t3 borrower-portal workspace ticket <url> # create ticket + git worktree
+t3 borrower-portal worktree provision     # uv sync + migrate into the worktree DB
+t3 borrower-portal run tests              # the portal pytest suite (95% gate)
+t3 borrower-portal run verify             # probe the verify endpoints (/, /dashboard/, /admin/login/)
+t3 borrower-portal ticket clear … / merge # the sanctioned review→merge keystone
+```
+
+`provision` runs the portal's own `manage.py` in a clean environment pinned to
+`config.settings`, so the worktree's SQLite file and migrations stay the
+portal's — teatree's control database is never touched. The lifecycle is driven
+through teatree's core commands (`python -m teatree …`); a teatree-side dispatch
+gap that routes these FSM groups to a lightweight overlay's `manage.py` is noted
+in the follow-up PR.
+
 ## AI-usage note
 
 This portal was built with Claude Code (Claude Opus-class models) on a Claude

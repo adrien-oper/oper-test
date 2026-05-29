@@ -9,6 +9,7 @@ single-repo SQLite project, so those defaults stay untouched. teatree is a
 dev-only dependency and is never imported by the Django app at runtime.
 """
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, override
 
@@ -33,6 +34,39 @@ def _repo_root() -> Path:
             return parent
     msg = f"Cannot find repo root from {here}"
     raise FileNotFoundError(msg)
+
+
+def _worktree_env(repo: Path) -> dict[str, str]:
+    """Worktree-scoped environment for every portal command teatree runs.
+
+    Teatree invokes the overlay with ``DJANGO_SETTINGS_MODULE`` already set to
+    teatree's own settings. pytest-django and ``manage.py`` both honour that
+    inherited value over the project's configured ``config.settings``, so the
+    portal would boot against teatree's app registry (the
+    ``HelpOffice doesn't declare an explicit app_label`` collection error) and
+    migrate into the wrong database. Pin the portal's settings explicitly, keep
+    the worktree's SQLite file and uploaded media inside the worktree, and run
+    the analyzer in the free offline stub by default — the live SDK path turns
+    on only when the developer exports a key.
+    """
+    return {
+        "DJANGO_SETTINGS_MODULE": "config.settings",
+        "SQLITE_PATH": str(repo / "db.sqlite3"),
+        "MEDIA_ROOT": str(repo / "media"),
+        "DOCUMENT_ANALYZER_BACKEND": "stub",
+    }
+
+
+def _portal_subprocess_env(repo: Path) -> dict[str, str]:
+    """Full environment for shelling into the portal's own ``manage.py``.
+
+    Starts from the inherited environment so ``uv`` keeps working, drops the
+    teatree venv marker so ``uv run`` resolves the worktree venv, then layers
+    the worktree-scoped portal settings on top via :func:`_worktree_env`.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+    env.update(_worktree_env(repo))
+    return env
 
 
 def _build_config() -> OverlayConfig:
@@ -118,11 +152,13 @@ class BorrowerPortalOverlay(OverlayBase):
             return []
         repo = Path(on_disk)
 
+        env = _portal_subprocess_env(repo)
+
         def sync_deps() -> None:
-            run_checked(["uv", "sync"], cwd=repo)
+            run_checked(["uv", "sync"], cwd=repo, env=env)
 
         def migrate() -> None:
-            run_checked(["uv", "run", "python", "manage.py", "migrate", "--noinput"], cwd=repo)
+            run_checked(["uv", "run", "python", "manage.py", "migrate", "--noinput"], cwd=repo, env=env)
 
         return [
             ProvisionStep(
@@ -139,18 +175,10 @@ class BorrowerPortalOverlay(OverlayBase):
 
     @override
     def get_env_extra(self, worktree: "Worktree") -> dict[str, str]:
-        # Keep the worktree's SQLite file and uploaded media inside the
-        # worktree, and run the analyzer in the free offline stub by default —
-        # the live SDK path turns on only when the developer exports a key.
         on_disk = worktree.worktree_path
         if not on_disk:
             return {}
-        repo = Path(on_disk)
-        return {
-            "SQLITE_PATH": str(repo / "db.sqlite3"),
-            "MEDIA_ROOT": str(repo / "media"),
-            "DOCUMENT_ANALYZER_BACKEND": "stub",
-        }
+        return _worktree_env(Path(on_disk))
 
     @override
     def get_run_commands(self, worktree: "Worktree") -> RunCommands:
