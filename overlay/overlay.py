@@ -57,7 +57,7 @@ class BorrowerPortalMetadata(OverlayMetadata):
 class BorrowerPortalOverlay(OverlayBase):
     """Lightweight teatree overlay targeting the borrower-portal repo."""
 
-    config = OverlayConfig(overlay_name="oper-test")
+    config = OverlayConfig(overlay_name="borrower-portal")
     metadata = BorrowerPortalMetadata()
 
     @override
