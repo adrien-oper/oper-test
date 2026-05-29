@@ -45,3 +45,8 @@ def previous_slug(slug: str) -> str | None:
 def step_index(slug: str) -> int:
     """Zero-based position of ``slug`` in the sequence."""
     return _SLUGS.index(slug)
+
+
+def is_step(slug: str) -> bool:
+    """Whether ``slug`` names a wizard step."""
+    return slug in _SLUGS
