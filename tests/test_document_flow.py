@@ -44,21 +44,51 @@ def _upload(application, name="payslip.pdf", content=b"Ada Lovelace 92052812928"
 
 
 class TestUploadView:
-    def test_upload_creates_document_and_redirects(self, client, user, application, mocker):
+    def test_upload_creates_document_and_enqueues_analysis(
+        self, client, user, application, mocker, django_capture_on_commit_callbacks
+    ):
         client.force_login(user)
-        mocker.patch("portal.views.document.analyze_document_task")
-        response = client.post(
-            reverse("portal:upload_document", kwargs={"pk": application.pk}),
-            {"kind": "payslip", "file": SimpleUploadedFile("payslip.pdf", b"data", content_type="application/pdf")},
-        )
+        task = mocker.patch("portal.views.document.analyze_document_task")
+        with django_capture_on_commit_callbacks(execute=True):
+            response = client.post(
+                reverse("portal:upload_document", kwargs={"pk": application.pk}),
+                {"kind": "payslip", "file": SimpleUploadedFile("payslip.pdf", b"data", content_type="application/pdf")},
+            )
         assert response.status_code == 302
         document = Document.objects.get(application=application)
         assert document.state == DocumentState.UPLOADED
+        # The single line wiring "upload" to "analysis runs" must fire with the right pk.
+        task.enqueue.assert_called_once_with(document.pk)
 
     def test_upload_requires_ownership(self, client, application):
         other = User.objects.create_user(username="eve@example.com", password="Str0ng!pass99")
         client.force_login(other)
         response = client.get(reverse("portal:upload_document", kwargs={"pk": application.pk}))
+        assert response.status_code == 404
+
+    def test_upload_form_renders_on_get(self, client, user, application):
+        client.force_login(user)
+        response = client.get(reverse("portal:upload_document", kwargs={"pk": application.pk}))
+        assert response.status_code == 200
+
+    @pytest.mark.parametrize("approve", [True, False])
+    def test_upload_blocked_on_decided_application(self, client, user, application, approve):
+        application.submit_for_review()  # -> UNDER_REVIEW
+        application.approve() if approve else application.reject()
+        application.save()  # now APPROVED or REJECTED (terminal)
+        client.force_login(user)
+        response = client.post(
+            reverse("portal:upload_document", kwargs={"pk": application.pk}),
+            {"kind": "payslip", "file": SimpleUploadedFile("p.pdf", b"d", content_type="application/pdf")},
+        )
+        assert response.status_code == 302
+        assert not Document.objects.filter(application=application).exists()
+
+    def test_detail_requires_ownership(self, client, user, application):
+        document = _upload(application)
+        other = User.objects.create_user(username="eve@example.com", password="Str0ng!pass99")
+        client.force_login(other)
+        response = client.get(reverse("portal:document_detail", kwargs={"pk": document.pk}))
         assert response.status_code == 404
 
     def test_detail_renders(self, client, user, application):
@@ -91,6 +121,35 @@ class TestUploadView:
         assert response.status_code == 200
         assert b'id="doc-status"' in response.content
         assert b"<h1>" not in response.content  # partial only, no full page chrome
+
+
+class TestDocumentDownload:
+    def test_owner_can_download_file(self, client, user, application):
+        client.force_login(user)
+        document = _upload(application, name="payslip.pdf", content=b"secret-pii-bytes")
+        response = client.get(reverse("portal:document_file", kwargs={"pk": document.pk}))
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content) == b"secret-pii-bytes"
+
+    def test_download_requires_login(self, client, application):
+        document = _upload(application)
+        response = client.get(reverse("portal:document_file", kwargs={"pk": document.pk}))
+        assert response.status_code == 302  # redirected to login
+
+    def test_download_requires_ownership(self, client, application):
+        document = _upload(application)
+        other = User.objects.create_user(username="eve@example.com", password="Str0ng!pass99")
+        client.force_login(other)
+        response = client.get(reverse("portal:document_file", kwargs={"pk": document.pk}))
+        assert response.status_code == 404
+
+    def test_media_is_not_served_unauthenticated(self, client, application, settings):
+        # The PII-bearing upload must never be reachable via a public static
+        # media route, even with DEBUG on.
+        settings.DEBUG = True
+        document = _upload(application, content=b"pii")
+        response = client.get(f"/{settings.MEDIA_URL}{document.file.name}")
+        assert response.status_code in {302, 404}  # never a 200 serving the bytes
 
 
 class TestAnalysisTask:

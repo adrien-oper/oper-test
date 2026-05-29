@@ -25,8 +25,19 @@ mkdir -p "${MEDIA_ROOT:-/data/media}"
 
 python manage.py migrate --noinput
 
+# Supervise the co-located task worker. A bare `python … db_worker &` would be
+# orphaned by the `exec` below (gunicorn becomes PID 1) and never restarted if
+# it died, leaving uploaded documents stuck in `analyzing`. This tiny loop
+# restarts the worker on exit. The analysis task is resumable (it re-claims
+# stranded `analyzing` rows under a row lock), so a restart drains the backlog.
 if [[ "${1:-}" == "gunicorn" ]]; then
-  python manage.py db_worker --no-startup-delay &
+  (
+    while true; do
+      python manage.py db_worker --no-startup-delay || true
+      echo "db_worker exited; restarting in 2s" >&2
+      sleep 2
+    done
+  ) &
 fi
 
 exec "$@"

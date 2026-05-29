@@ -5,7 +5,7 @@
   <div class="panel">
     <h1 style="text-align:center">Enter phone number</h1>
     <p class="lead" style="text-align:center">Adding your phone number helps us assist you better.</p>
-    <p class="message">Demo: verification is stubbed — submit any phone number (and an optional 6-digit code).</p>
+    <p class="message">Demo: verification is stubbed — enter any phone number and any 6-digit code to continue.</p>
     <form method="post" action="{% url 'portal:verify_phone' %}">
       {% csrf_token %}
       {% for field in form %}

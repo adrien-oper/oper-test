@@ -6,6 +6,7 @@
   <div class="panel">
     {% include "portal/document/_status.html" %}
   </div>
+  <a class="btn" href="{% url 'portal:document_file' pk=document.pk %}">Download file</a>
   <a class="btn" href="{% url 'portal:application_detail' pk=document.application.pk %}">Back to application</a>
 </div>
 {% endblock %}

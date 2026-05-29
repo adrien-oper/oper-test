@@ -15,7 +15,7 @@ from django.views.decorators.http import require_POST
 from django_fsm import TransitionNotAllowed
 
 from portal.forms import ApplicationDetailsForm
-from portal.models import Application, Simulation, SimulationState
+from portal.models import Application, ApplicationState, Simulation, SimulationState
 from portal.views._shared import get_owned_or_404
 
 
@@ -57,8 +57,17 @@ def convert_simulation(request: HttpRequest, pk: int) -> HttpResponse:
 
 @login_required
 def application_form(request: HttpRequest, pk: int) -> HttpResponse:
-    """The multi-step application form (personal/employment details)."""
+    """The multi-step application form (personal/employment details).
+
+    Editable only while the application is a draft. Once it has been
+    submitted, the applicant's identity (national number, name, address) is
+    the data a reviewer decides against, so a later POST must not be able to
+    rewrite it — the submit guard alone is not enough, because ``form.save()``
+    would commit the edits before the FSM transition refuses the re-submit.
+    """
     application = get_owned_or_404(request, Application, pk)
+    if application.state != ApplicationState.DRAFT:
+        return redirect("portal:application_detail", pk=application.pk)
     if request.method == "POST":
         form = ApplicationDetailsForm(request.POST, instance=application)
         if form.is_valid():

@@ -95,6 +95,13 @@ class TestPhoneAndOffice:
         response = client.post(reverse("portal:verify_phone"), {"phone_number": "+32470123456"})
         assert response.status_code == 200  # missing code re-displays the form
 
+    def test_verify_phone_copy_does_not_claim_code_is_optional(self, client):
+        # The validator requires a 6-digit code, so the on-screen copy must
+        # not tell the user the code is optional (a guaranteed dead-end).
+        self._signup(client)
+        response = client.get(reverse("portal:verify_phone"))
+        assert b"optional" not in response.content.lower()
+
     def test_choose_office_requires_phone_verification(self, client, office):
         self._signup(client)  # signed in but phone not verified
         response = client.get(reverse("portal:choose_office"))

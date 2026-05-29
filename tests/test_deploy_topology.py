@@ -28,3 +28,10 @@ def test_no_separate_worker_process_group():
 def test_entrypoint_starts_the_worker_for_the_web_command():
     assert "db_worker" in _ENTRYPOINT
     assert 'if [[ "${1:-}" == "gunicorn" ]]; then' in _ENTRYPOINT
+
+
+def test_entrypoint_supervises_the_worker():
+    # The worker must run under a restart loop, not a bare `&` that orphans it
+    # behind `exec gunicorn` with no recovery if it crashes.
+    assert "while true; do" in _ENTRYPOINT
+    assert "restarting" in _ENTRYPOINT
