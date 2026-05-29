@@ -49,7 +49,11 @@ fix = true
 lint.select = [ "ALL" ]
 lint.ignore = [
   "CPY001", # missing-copyright-notice — not applicable
-  # D1xx: missing docstrings — we prefer self-documenting code over docstrings
+  # D1xx: docstrings are not *mandated* — names and types carry the obvious
+  # cases, so a docstring is reserved for explaining a non-obvious WHY (atomic
+  # conversion, FSM guards, the terminal-vs-transient task error split). This
+  # ignore stops ruff demanding a docstring on every symbol while leaving the
+  # high-value ones in place.
   "D100",
   "D101",
   "D102",
