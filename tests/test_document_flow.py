@@ -67,6 +67,31 @@ class TestUploadView:
         response = client.get(reverse("portal:document_detail", kwargs={"pk": document.pk}))
         assert response.status_code == 200
 
+    def test_detail_polls_while_non_terminal(self, client, user, application):
+        client.force_login(user)
+        document = _upload(application)  # state is UPLOADED, not terminal
+        response = client.get(reverse("portal:document_detail", kwargs={"pk": document.pk}))
+        assert b'hx-trigger="every 2s"' in response.content
+
+    def test_detail_stops_polling_once_terminal(self, client, user, application, settings):
+        settings.DOCUMENT_ANALYZER_BACKEND = "stub"
+        client.force_login(user)
+        document = _upload(application)
+        run_document_analysis(document.pk)  # drives it to ANALYZED (terminal)
+        response = client.get(reverse("portal:document_detail", kwargs={"pk": document.pk}))
+        assert b"hx-trigger" not in response.content
+
+    def test_detail_returns_status_partial_on_htmx_request(self, client, user, application):
+        client.force_login(user)
+        document = _upload(application)
+        response = client.get(
+            reverse("portal:document_detail", kwargs={"pk": document.pk}),
+            headers={"hx-request": "true"},
+        )
+        assert response.status_code == 200
+        assert b'id="doc-status"' in response.content
+        assert b"<h1>" not in response.content  # partial only, no full page chrome
+
 
 class TestAnalysisTask:
     @pytest.fixture(autouse=True)
