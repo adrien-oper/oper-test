@@ -16,7 +16,8 @@
 <div class="panel">
   <h2>Mortgage overview</h2>
   <form hx-get="{% url 'portal:simulation_step' slug='report' %}"
-        hx-target="#report-card" hx-swap="innerHTML" hx-trigger="input from:input[type=range]">
+        hx-target="#report-card" hx-swap="innerHTML"
+        hx-trigger="input from:input[type=range] delay:200ms" hx-sync="this:replace">
     <div class="slider-block">
       <label>Own funds <span>&euro; {{ report.own_funds|floatformat:0 }}</span></label>
       <input type="range" name="own_funds" min="{{ min_funds }}" max="{{ max_funds }}"

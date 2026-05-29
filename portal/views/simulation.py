@@ -6,12 +6,14 @@ is a small form over the shared Simulation row; navigation and the sidebar
 read from ``portal.wizard``.
 """
 
+import contextlib
 from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
+from django_fsm import TransitionNotAllowed
 
 from portal import forms, wizard
 from portal.models import ExpenseLine, IncomeLine, Simulation, SimulationState
@@ -225,9 +227,13 @@ def _report(request: HttpRequest) -> HttpResponse:
     if simulation is None:
         return redirect("portal:simulation_start")
 
-    if simulation.state == SimulationState.DRAFT and simulation.incomes.exists():
-        simulation.complete()
-        simulation.save()
+    # Auto-complete a draft once it is financially complete, but let the FSM
+    # guard decide what "complete" means (a price AND income) rather than
+    # duplicating the rule here — a draft with income but no price stays draft.
+    if simulation.state == SimulationState.DRAFT:
+        with contextlib.suppress(TransitionNotAllowed):
+            simulation.complete()
+            simulation.save()
 
     own_funds_override = _decimal_param(request, "own_funds")
     duration = _int_param(request, "duration")
@@ -239,7 +245,10 @@ def _report(request: HttpRequest) -> HttpResponse:
         "sidebar": _sidebar("report"),
         "previous": wizard.previous_slug("report"),
         "min_funds": 0,
-        "max_funds": int(report.total_project_cost),
+        # Keep the slider's max at least as large as the rendered own-funds
+        # value, so an over-funded simulation (own funds > project cost) does
+        # not snap the thumb away from the amount the label shows.
+        "max_funds": max(int(report.total_project_cost), int(report.own_funds)),
     }
     if request.headers.get("HX-Request"):
         return render(request, "portal/simulation/_report_card.html", context)

@@ -4,6 +4,7 @@ from decimal import Decimal
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.contrib.messages import get_messages
 from django.urls import reverse
 
 from portal.models import Application, ApplicationState, IncomeLine, Simulation, SimulationState
@@ -119,6 +120,85 @@ class TestApplicationForm:
         response = client.get(reverse("portal:application_form", kwargs={"pk": application.pk}))
         assert response.status_code == 200
 
+    def test_form_rejects_get_on_non_draft_application(self, client, user, completed_simulation):
+        client.force_login(user)
+        application = self._application(completed_simulation)
+        application.first_name = "Ada"
+        application.last_name = "Lovelace"
+        application.national_number = "92052812928"
+        application.save()
+        application.submit_for_review()  # -> UNDER_REVIEW
+        response = client.get(reverse("portal:application_form", kwargs={"pk": application.pk}))
+        assert response.status_code == 302
+        assert response.url == reverse("portal:application_detail", kwargs={"pk": application.pk})
+
+    def test_form_cannot_rewrite_identity_on_non_draft_application(self, client, user, completed_simulation):
+        """A borrower must not edit identity fields once the application left draft.
+
+        Without a state guard, ``form.save()`` commits the edits before the FSM
+        transition rejects the re-submit, silently rewriting legally-significant
+        identity on an application a reviewer is already deciding.
+        """
+        client.force_login(user)
+        application = self._application(completed_simulation)
+        application.first_name = "Ada"
+        application.last_name = "Lovelace"
+        application.national_number = "92052812928"
+        application.current_address = "1 Real Street"
+        application.save()
+        application.submit_for_review()  # -> UNDER_REVIEW
+        response = client.post(
+            reverse("portal:application_form", kwargs={"pk": application.pk}),
+            {
+                "first_name": "Evil",
+                "last_name": "Twin",
+                "national_number": "00000000000",
+                "current_address": "666 Fraud Ave",
+                "employment_status": "employee",
+            },
+        )
+        assert response.status_code == 302
+        stored = Application.objects.get(pk=application.pk)
+        assert stored.state == ApplicationState.UNDER_REVIEW
+        assert stored.first_name == "Ada"
+        assert stored.national_number == "92052812928"
+        assert stored.current_address == "1 Real Street"
+
+    def test_convert_requires_ownership(self, client, completed_simulation):
+        other = User.objects.create_user(username="eve@example.com", password="Str0ng!pass99")
+        client.force_login(other)
+        response = client.post(reverse("portal:convert_simulation", kwargs={"pk": completed_simulation.pk}))
+        assert response.status_code == 404
+        assert not Application.objects.filter(simulation=completed_simulation).exists()
+
+    def test_form_requires_ownership(self, client, user, completed_simulation):
+        application = self._application(completed_simulation)
+        other = User.objects.create_user(username="eve@example.com", password="Str0ng!pass99")
+        client.force_login(other)
+        response = client.post(
+            reverse("portal:application_form", kwargs={"pk": application.pk}),
+            {"first_name": "Mallory", "last_name": "X", "national_number": "11111111111"},
+        )
+        assert response.status_code == 404
+        stored = Application.objects.get(pk=application.pk)
+        assert not stored.first_name
+
+    def test_detail_requires_ownership(self, client, user, completed_simulation):
+        application = self._application(completed_simulation)
+        other = User.objects.create_user(username="eve@example.com", password="Str0ng!pass99")
+        client.force_login(other)
+        response = client.get(reverse("portal:application_detail", kwargs={"pk": application.pk}))
+        assert response.status_code == 404
+
+    def test_convert_refused_message_redirects_to_recap(self, client, user):
+        sim = Simulation.objects.create(user=user, property_price=Decimal(300000))
+        IncomeLine.objects.create(simulation=sim, monthly_amount=Decimal(6000))
+        client.force_login(user)
+        response = client.post(reverse("portal:convert_simulation", kwargs={"pk": sim.pk}))
+        assert response.url == reverse("portal:apply_recap", kwargs={"pk": sim.pk})
+        messages = [m.message for m in get_messages(response.wsgi_request)]
+        assert any("not ready to convert" in m for m in messages)
+
     def test_detail_renders(self, client, user, completed_simulation):
         client.force_login(user)
         application = self._application(completed_simulation)
@@ -145,3 +225,5 @@ class TestApplicationForm:
         with django_assert_max_num_queries(8):
             response = client.get(reverse("portal:application_detail", kwargs={"pk": application.pk}))
         assert response.status_code == 200
+        for index in range(4):
+            assert f"doc{index}.pdf".encode() in response.content

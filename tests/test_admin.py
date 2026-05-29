@@ -116,6 +116,23 @@ class TestApplicationFsmAdmin:
         response = client.get(reverse("admin:portal_application_change", args=[application.pk]))
         assert b"_fsm_transition_to" in response.content
 
+    def test_submitted_app_exposes_start_review_button(self, client, staff, application):
+        application.submit()  # -> SUBMITTED (the state a reviewer opens review from)
+        application.save()
+        client.force_login(staff)
+        response = client.get(reverse("admin:portal_application_change", args=[application.pk]))
+        assert b'value="start_review"' in response.content
+
+    def test_start_review_transition_via_admin_post(self, client, staff, application):
+        application.submit()  # -> SUBMITTED
+        application.save()
+        client.force_login(staff)
+        client.post(
+            reverse("admin:portal_application_change", args=[application.pk]),
+            self._change_form_data(application, _fsm_transition_to="start_review"),
+        )
+        assert Application.objects.get(pk=application.pk).state == ApplicationState.UNDER_REVIEW
+
     def _change_form_data(self, application, **overrides):
         data = {
             "first_name": application.first_name,

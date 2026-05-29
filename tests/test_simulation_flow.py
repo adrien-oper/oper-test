@@ -1,5 +1,7 @@
 """End-to-end tests for the anonymous simulation HTMX flow."""
 
+import re
+
 import pytest
 from django.urls import reverse
 
@@ -160,6 +162,33 @@ class TestReport:
         assert sim.state == SimulationState.COMPLETED
         assert b"Loan amount" in response.content
 
+    def test_report_apply_button_shown_when_completed(self, client, django_user_model):
+        user = django_user_model.objects.create_user(username="ada@example.com", password="Str0ng!pass99")
+        client.force_login(user)
+        self._ready_simulation(client)
+        response = client.get(reverse("portal:simulation_step", kwargs={"slug": "report"}))
+        sim = Simulation.objects.get(pk=client.session[wizard.SIMULATION_SESSION_KEY])
+        assert reverse("portal:apply_to_simulation", kwargs={"pk": sim.pk}).encode() in response.content
+
+    def test_report_apply_button_hidden_on_draft_with_no_income(self, client, django_user_model):
+        """A logged-in user on a draft report must not see a dead Apply CTA.
+
+        A draft with no income lines does not auto-complete, so Apply would
+        bounce at the recap — the same dead-end #10 fixed on the dashboard.
+        """
+        user = django_user_model.objects.create_user(username="ada@example.com", password="Str0ng!pass99")
+        client.force_login(user)
+        client.post(reverse("portal:simulation_step", kwargs={"slug": "purpose"}), {"purpose": "buy"})
+        client.post(
+            reverse("portal:simulation_step", kwargs={"slug": "project"}),
+            {"property_type": "house", "region": "flanders", "property_price": "300000", "property_usage": "own_home"},
+        )
+        response = client.get(reverse("portal:simulation_step", kwargs={"slug": "report"}))
+        sim = Simulation.objects.get(pk=client.session[wizard.SIMULATION_SESSION_KEY])
+        assert sim.state == SimulationState.DRAFT
+        assert reverse("portal:apply_to_simulation", kwargs={"pk": sim.pk}).encode() not in response.content
+        assert b"Add your income to apply" in response.content
+
     def test_slider_partial_recomputes(self, client):
         self._ready_simulation(client)
         client.get(reverse("portal:simulation_step", kwargs={"slug": "report"}))
@@ -187,3 +216,21 @@ class TestReport:
         )
         assert response.status_code == 200
         assert b"Loan amount" in response.content
+
+    def test_slider_is_debounced(self, client):
+        self._ready_simulation(client)
+        response = client.get(reverse("portal:simulation_step", kwargs={"slug": "report"}))
+        assert b"delay:200ms" in response.content
+
+    def test_slider_max_not_below_own_funds_when_over_funded(self, client):
+        # Over-funding (own funds > total project cost) must not make the
+        # slider's max smaller than the value it renders, or the thumb snaps
+        # away from the displayed amount.
+        self._ready_simulation(client)
+        response = client.get(
+            reverse("portal:simulation_step", kwargs={"slug": "report"}) + "?own_funds=900000",
+        )
+        content = response.content.decode()
+        own_funds_max = re.search(r'name="own_funds"[^>]*\bmax="(\d+)"', content)
+        assert own_funds_max is not None
+        assert int(own_funds_max.group(1)) >= 900000

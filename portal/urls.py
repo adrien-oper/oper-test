@@ -31,4 +31,5 @@ urlpatterns = [
     path("application/<int:pk>/form/", application.application_form, name="application_form"),
     path("application/<int:pk>/documents/upload/", document.upload_document, name="upload_document"),
     path("document/<int:pk>/", document.document_detail, name="document_detail"),
+    path("document/<int:pk>/file/", document.document_file, name="document_file"),
 ]
