@@ -133,8 +133,9 @@ result shape:
 - **Single-host SQLite + co-located worker over Postgres/LiteFS** — the demo is
   one Fly Machine with the queue in the SQLite file on the volume, so the worker
   runs co-located with gunicorn (under a restart loop in the entrypoint). Simple
-  and free-tier friendly; the cost is that a separate worker Machine or
-  multi-region needs Postgres/LiteFS first (see `DEPLOY.md`). The analysis task
+  and cheap to run (a single small Machine, a few dollars a month — see the
+  *Hosting cost* note in [`COST.md`](COST.md)); the cost is that a separate worker
+  Machine or multi-region needs Postgres/LiteFS first (see `DEPLOY.md`). The analysis task
   is resumable, so a restart drains any backlog.
 - **AI built real, deployed stubbed** — the SDK path with prompt caching is
   implemented and unit-tested, but the demo runs the free deterministic stub so
