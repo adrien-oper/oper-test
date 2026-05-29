@@ -66,6 +66,10 @@ class TestProvisionSteps:
         assert env["SQLITE_PATH"] == str(tmp_path / "db.sqlite3")
         assert env["MEDIA_ROOT"] == str(tmp_path / "media")
 
+    def test_env_extra_pins_the_portal_settings_over_an_inherited_value(self, overlay, mocker, tmp_path):
+        worktree = mocker.Mock(worktree_path=str(tmp_path))
+        assert overlay.get_env_extra(worktree)["DJANGO_SETTINGS_MODULE"] == "config.settings"
+
     def test_env_extra_without_worktree_path_is_empty(self, overlay, mocker):
         assert overlay.get_env_extra(mocker.Mock(worktree_path=None)) == {}
 
