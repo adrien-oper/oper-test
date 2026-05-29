@@ -49,10 +49,32 @@ jobs:
       - name: Sync runtime-only dependencies
         run: uv sync --frozen --no-dev
 
-      - name: Assert teatree is absent from the production environment
+      - name: Assert dev-only tooling is absent from the production environment
         run: |
-          if uv pip list | grep -i teatree; then
-            echo "::error::teatree leaked into the production (--no-dev) environment"
+          if uv pip list | grep -iE 'teatree|playwright'; then
+            echo "::error::dev-only tooling leaked into the production (--no-dev) environment"
             exit 1
           fi
-          echo "OK: no teatree in the --no-dev environment"
+          echo "OK: no teatree/playwright in the --no-dev environment"
+
+  e2e:
+    # Browser-driven journeys. Runs alongside `quality` and `prod-image-deps`;
+    # the e2e dependency group is installed only here, so neither the prod
+    # image nor the default dev tooling depends on it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies (dev tooling + e2e group)
+        run: uv sync --frozen --group e2e
+
+      - name: Install the Chromium browser
+        run: uv run playwright install --with-deps chromium
+
+      - name: Run the end-to-end suite
+        run: uv run pytest e2e --no-cov

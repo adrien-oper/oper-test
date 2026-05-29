@@ -4,30 +4,7 @@
 <div class="content-narrow">
   <h1>{{ document.original_filename }}</h1>
   <div class="panel">
-    <p>Status:
-      {% if document.state == "flagged" %}<span class="pill pill-bad">{{ document.get_state_display }}</span>
-      {% elif document.state == "analyzed" %}<span class="pill pill-good">{{ document.get_state_display }}</span>
-      {% else %}<span class="pill">{{ document.get_state_display }}</span>{% endif %}
-    </p>
-
-    {% if analysis %}
-      <p class="lead">{{ analysis.summary }}</p>
-      {% if analysis.is_stub %}<p class="message">Analysis ran in STUB mode (no Anthropic key configured).</p>{% endif %}
-      <h2>Detected type</h2>
-      <p>{{ analysis.get_detected_kind_display }}</p>
-      <h2>Extracted fields</h2>
-      <table class="costs-table">
-        {% for key, value in analysis.extracted_fields.items %}
-          <tr><td>{{ key }}</td><td>{{ value }}</td></tr>
-        {% endfor %}
-      </table>
-      {% if analysis.mismatches %}
-        <h2>Mismatches</h2>
-        <ul>{% for mismatch in analysis.mismatches %}<li>{{ mismatch }}</li>{% endfor %}</ul>
-      {% endif %}
-    {% else %}
-      <p class="lead">Analysis is in progress. Refresh in a moment.</p>
-    {% endif %}
+    {% include "portal/document/_status.html" %}
   </div>
   <a class="btn" href="{% url 'portal:application_detail' pk=document.application.pk %}">Back to application</a>
 </div>

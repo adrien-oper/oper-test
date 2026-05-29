@@ -41,11 +41,14 @@ def upload_document(request: HttpRequest, pk: int) -> HttpResponse:
 
 @login_required
 def document_detail(request: HttpRequest, pk: int) -> HttpResponse:
-    """Show a document's analysis status and result."""
+    """Show a document's analysis status and result.
+
+    Polled by HTMX every two seconds while the document is non-terminal; the
+    poll swaps the status partial, whose trigger attributes drop once the
+    document reaches a terminal state, so the polling cancels itself.
+    """
     document = get_object_or_404(Document.objects.for_owner(request.user), pk=pk)
-    analysis = getattr(document, "analysis", None)
-    return render(
-        request,
-        "portal/document/detail.html",
-        {"document": document, "analysis": analysis},
-    )
+    context = {"document": document, "analysis": getattr(document, "analysis", None)}
+    if request.headers.get("HX-Request"):
+        return render(request, "portal/document/_status.html", context)
+    return render(request, "portal/document/detail.html", context)
