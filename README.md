@@ -3,76 +3,89 @@
 A minimal white-label mortgage borrower portal with AI document analysis.
 Server-rendered Django 6 + HTMX, no SPA, single-repo monolith.
 
-> Work in progress. The domain core (guarded state machines + affordability
-> engine) and project scaffold are in place; the HTMX flow, AI analysis task,
-> and deployment are being built on top.
+Live demo: https://borrower-portal-demo.fly.dev/
 
-## What it does (target flow)
+## What it does
 
-1. **Simulate** (anonymous) — purpose, borrowers, project, contribution,
-   income, expenses → a feasibility report with affordability sliders.
-2. **Sign up** — email + password, phone verification (stub), pick a help office.
-3. **Dashboard** — saved simulations; start a new one or apply on one.
-4. **Apply** — recap the simulation, convert it to an application, fill a
-   multi-step form, submit; the dashboard shows status.
-5. **Documents** — upload a supporting document; an async task runs AI
-   classification + field extraction + mismatch detection against the
-   application data.
+End to end, anonymous simulation through to an AI-analysed document upload:
+
+1. **Simulate** (anonymous, no login) — purpose, number of borrowers, project
+   details, contribution, income and expenses (add-row UI) → a feasibility
+   report (loan amount, monthly payment, duration, rate) with affordability
+   sliders you can drag to see whether the property is within reach.
+2. **Sign up** — username + password + privacy-policy acceptance → a stubbed
+   phone-number verification → pick a help office. The help office and the
+   verification flag persist on a `BorrowerProfile`, so they survive logout.
+3. **Dashboard** — your saved simulations; start another or apply on one.
+4. **Apply** — recap the simulation, convert it into an application (a guarded,
+   atomic state transition), fill a multi-step form (property, applicant
+   details, contribution, address, employment, incomes), submit; the dashboard
+   then shows the application status.
+5. **Documents** — upload a supporting document linked to the application. An
+   async task classifies it, extracts key fields, and flags mismatches against
+   the application data.
+
+## What I intentionally did NOT build (and why)
+
+The brief and the reference walkthrough repeatedly bless cutting scope, so these
+are deliberate omissions, not oversights:
+
+- **Only the BUY purpose is wired end to end.** The other purposes share the
+  same machinery and are left as a thin extension point — building all of them
+  would add UI surface without exercising any new domain logic.
+- **No real phone verification, email, or payment flow.** Phone verification is
+  a stub; the walkthrough explicitly says detailed pay flows are not needed.
+- **No per-borrower income breakdown in the UI.** `IncomeLine.borrower_index`
+  is captured by the model but not surfaced — it leaves room for the feature
+  without committing to its UI now.
+- **No automatic related-object prefetching library.** Django 6.0 ships none,
+  and a third-party one would force model-base-class changes app-wide plus a
+  runtime dependency. I kept explicit `for_*()` QuerySet methods instead (see
+  *Trade-offs*).
+- **AI analysis is built for real but deployed stubbed** (see *AI document
+  analysis*) — I have no metered API key, only a Max plan, so the live SDK path
+  is implemented and tested but off by default.
 
 ## Architecture
 
-- **Django 6 + HTMX**, server-rendered templates, SQLite.
-- **Guarded state machines** (`django-fsm-2`) model every lifecycle — no status
-  is ever written by hand:
+- **Django 6 + HTMX**, server-rendered templates, SQLite, single repo.
+- **Guarded state machines** (`django-fsm-2`, `protected=True`) model every
+  lifecycle — no status field is ever written by hand:
   - `Simulation`: `draft → completed → converted`
   - `Application`: `draft → submitted → under_review → approved | rejected`
+    (transitions carry permission guards via `has_transition_perm`)
   - `Document`: `uploaded → analyzing → analyzed | flagged | failed`
-  - Simulation → application is itself a guarded, atomic transition.
-- **Fat models**: business logic (affordability maths, transitions, conversion)
-  lives on models and a pure `affordability` engine, not in views. QuerySet
-  methods (`Application.objects.for_detail()`, `Document.objects.for_owner()`,
-  `Simulation.objects.for_dashboard()`) shape graphs explicitly and are locked
-  with `assertNumQueries` (see below on prefetching).
-- **Persistent onboarding**: a `BorrowerProfile` (one-to-one with the user)
-  stores the chosen help office and the phone-verification flag, so those
-  onboarding choices survive logout rather than living only in the session.
-- **Async** via `django-tasks` (durable database backend, `db_worker`).
+  - Simulation → application conversion is itself a guarded, atomic transition.
+- **Fat models**: affordability maths, transitions and conversion live on models
+  and a pure `affordability` engine, never in views. QuerySet methods
+  (`Application.objects.for_detail()`, `Document.objects.for_owner()`,
+  `Simulation.objects.for_dashboard()`) shape query graphs explicitly and are
+  locked with `assertNumQueries`.
+- **Object-level access is scoped once** through `get_owned_or_404`. Uploaded
+  files carry PII, so they are served only through the authenticated,
+  owner-scoped `document_file` view — never a public static-media route.
+- **Async** via `django-tasks` (durable database backend, `db_worker`). The
+  analysis task is idempotent and enqueued only after the upload transaction
+  commits (`transaction.on_commit`); it re-claims stranded `uploaded`/
+  `analyzing` rows under a row lock on restart, so it resumes safely.
 - **AI document analysis** runs behind one `analyze_document` function with
-  three interchangeable backends, selected by `DOCUMENT_ANALYZER_BACKEND`
-  (or auto-resolved): `stub`, `sdk`, and a dev-only `cli`. All three return the
-  same result shape, and malformed output is rejected rather than silently
-  recorded as an "other" classification. The `sdk` system prompt carries a
-  `cache_control` breakpoint so the API can reuse it once it crosses the
-  model's cache minimum. The analyzer is fully tested with no key required
-  (deterministic stub + SDK/CLI boundaries mocked); one live round-trip test
-  auto-skips unless `ANTHROPIC_API_KEY` is present.
-
-### On automatic prefetching
-
-Django 6.0 ships no built-in automatic related-object prefetching (the 6.0
-notes only *remove* some implicit prefetch behaviour). Rather than adopt a
-third-party library that would require changing model base classes app-wide and
-add a runtime dependency, this project keeps explicit `for_*()` QuerySet methods
-and locks the query counts with `assertNumQueries`. The trade-off: a little more
-boilerplate per read path, in exchange for queries that are visible at the call
-site and no production dependency.
-
-### Scope notes
-
-- `IncomeLine.borrower_index` is captured by the model but not yet surfaced in
-  the UI; it leaves room for a future per-borrower income breakdown.
-- The apply flow wires the BUY purpose end to end; the other purposes share the
-  same machinery and are intentionally left as a thin extension point.
+  three interchangeable backends (`stub`, `sdk`, dev-only `cli`), selected by
+  `DOCUMENT_ANALYZER_BACKEND` or auto-resolved. All return the same result
+  shape; malformed model output is rejected, not silently recorded. The `sdk`
+  system prompt carries a `cache_control` breakpoint so the API can reuse it
+  once it crosses the model's cache minimum. The whole analyzer is unit-tested
+  with no key required (deterministic stub + SDK/CLI boundaries mocked); one
+  live round-trip test auto-skips unless `ANTHROPIC_API_KEY` is present.
 
 ## Run locally
 
 ```bash
 uv sync
-uv run python manage.py migrate
-uv run python manage.py runserver
+uv run python manage.py migrate && uv run python manage.py runserver
 ```
 
-Optional async worker (documents analyze inline without it in dev):
+Documents analyze inline in dev, so no worker is needed. To exercise the durable
+queue path, run the worker alongside the server:
 
 ```bash
 uv run python manage.py db_worker
@@ -105,13 +118,27 @@ result shape:
   spuriously flags as a mismatch.
 - **`sdk`** — the Anthropic Messages API (the production live path). Selected
   automatically when `ANTHROPIC_API_KEY` is set.
-- **`cli`** — a **dev-only convenience backend** that shells out to the
-  `claude` CLI in print mode (`claude -p … --output-format json`), reusing the
-  developer's existing Claude Code login so no API key is needed locally. It is
-  **opt-in only** (`DOCUMENT_ANALYZER_BACKEND=cli`) and is **never** the default
-  resolution: a deployed container has no `claude` binary, so it must not be
-  used in production. If selected without the binary on `PATH`, it fails with a
-  clear error rather than silently degrading.
+- **`cli`** — a dev-only convenience backend that shells out to the `claude` CLI
+  in print mode, reusing the developer's existing Claude Code login so no API
+  key is needed locally. Opt-in only (`DOCUMENT_ANALYZER_BACKEND=cli`), never
+  the default resolution, and never available in a deployed container (no
+  `claude` binary). It fails with a clear error rather than silently degrading.
+
+## Trade-offs (deliberate)
+
+- **Explicit `for_*()` QuerySet methods over an auto-prefetch library** —
+  a little more boilerplate per read path, in exchange for queries that are
+  visible at the call site, locked by `assertNumQueries`, and no runtime
+  dependency.
+- **Single-host SQLite + co-located worker over Postgres/LiteFS** — the demo is
+  one Fly Machine with the queue in the SQLite file on the volume, so the worker
+  runs co-located with gunicorn (under a restart loop in the entrypoint). Simple
+  and free-tier friendly; the cost is that a separate worker Machine or
+  multi-region needs Postgres/LiteFS first (see `DEPLOY.md`). The analysis task
+  is resumable, so a restart drains any backlog.
+- **AI built real, deployed stubbed** — the SDK path with prompt caching is
+  implemented and unit-tested, but the demo runs the free deterministic stub so
+  it incurs no metered API spend.
 
 ## Production install
 
@@ -124,6 +151,9 @@ uv run python manage.py migrate
 uv run gunicorn config.wsgi
 ```
 
+Deployment to Fly.io (remote build, no local Docker) is documented in
+[`DEPLOY.md`](DEPLOY.md).
+
 ## Quality
 
 ```bash
@@ -133,15 +163,57 @@ uv run pytest                 # >= 95% coverage gate
 ```
 
 Pre-commit hooks (`prek install`) run ruff, gitleaks, hygiene checks, and a
-pre-push `ty` + `pytest` gate.
+pre-push `ty` + `pytest` gate. End-to-end Playwright coverage of the core
+journeys lives under `e2e/` (run with `uv run --group e2e pytest e2e --no-cov`).
 
-## teatree overlay
+## teatree reuse
 
-The repo ships a *lightweight* [teatree](https://github.com/souliane/teatree)
-overlay (`overlay/overlay.py`, registered via a `teatree.overlays` entry point)
-so the project can be developed and reviewed through the `t3` CLI. It only
-teaches teatree where the repo lives, how to run its tests/lint/serve, and how
-to validate PR titles (conventional commits). It intentionally does not bundle
-lifecycle skills, workspace orchestration, or loop slots — those keep teatree's
-defaults. teatree is a dev-only dependency and is never imported by the Django
-app at runtime.
+This repo reuses [teatree](https://github.com/souliane/teatree), an open-source
+agent CLI, in two honest ways:
+
+- **Skills + copied config.** The project's tooling baseline (ruff/ty/pytest
+  config, prek hooks, the `uv`/Django-oriented `pyproject` shape) was adapted
+  from teatree's stack rather than reinvented, and the `ac-django` / `ac-python`
+  skills guided the code style.
+- **A teatree overlay.** `overlay/overlay.py` registers via a `teatree.overlays`
+  entry point so the project can be developed, provisioned, run, tested, and
+  reviewed through the `t3` CLI. It teaches teatree where the repo lives, how to
+  run its test/lint/format/typecheck/serve/worker commands, how to provision a
+  worktree (sync + migrate, AI stubbed by default), how to validate PR titles
+  (conventional commits), and which companion skills to load (`ac-django`,
+  `ac-python`, and a small project skill in `.claude/skills/borrower-portal/`).
+  It deliberately omits multi-tenant DB orchestration, loop slots, and messaging
+  backends — those do not apply to a single-repo SQLite project. teatree stays a
+  dev-only dependency, never imported by the Django app at runtime.
+
+## AI-usage note
+
+This portal was built with Claude Code (Claude Opus-class models) on a Claude
+Max plan, used as a pair-programmer across planning, implementation, tests, and
+this documentation.
+
+Where I stopped trusting the AI and verified by hand:
+
+- **State-machine and permission boundaries** — I checked every `@transition`
+  guard and the conversion path myself rather than trust generated transitions,
+  since a wrong guard is a silent authorization hole. (One such hole — a borrower
+  rewriting identity fields on an already-submitted application — was found and
+  closed in the hardening pass.)
+- **The async task's idempotency and resumability** — the row-lock + re-claim
+  logic and the after-commit enqueue were reviewed against the actual failure
+  modes (worker restart mid-analysis), not accepted on first generation.
+- **Query counts** — every `for_*()` QuerySet method is pinned with
+  `assertNumQueries`, because generated ORM code is prone to quiet N+1s.
+- **The AI analyzer's failure handling** — malformed model output, bad keys,
+  and unknown models are explicitly tested, since the one component calling an
+  LLM is the least deterministic.
+- **Security and deploy hardening** — the `SECRET_KEY`/`DEBUG` startup check,
+  object-level ownership checks, the PII-document download path, and file-upload
+  validation were verified against an adversarial checklist rather than assumed.
+
+Rough human time: on the order of **1–2 hours** hands-on (framing, the
+deploy-account decision, review and unblocking), against roughly **4–6 hours**
+of active agent build time over 2–3 calendar days. A full token-by-model
+breakdown, the API-equivalent USD cost, wall-clock vs. active time, and the
+verdict on whether a $50 metered key suffices versus a temporary Max plan are in
+the **[Cost & Feasibility Report](COST.md)**.
