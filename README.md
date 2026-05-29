@@ -264,6 +264,7 @@ the API-equivalent spend is **approx. $310 (range $100–$620)** for the exercis
 alone and **approx. $450 (range $160–$800)** including the supporting teatree
 tooling. A clean from-scratch build of just the portal would realistically cost
 **approx. $75–$100** — so a $50 metered key is optimistic and likely short; a
-temporary Max plan is the lower-stress choice. The per-scope breakdown,
-wall-clock vs. active time, and the budget verdict are in the **[Cost &
-Feasibility Report](COST.md)**.
+temporary Max plan is the lower-stress choice. The per-scope breakdown, a
+per-activity breakdown (working prototype, testing, e2e, bug hunt, teatree
+upstream fixes, code-quality checks), wall-clock vs. active time, and the budget
+verdict are in the **[Cost & Feasibility Report](COST.md)**.

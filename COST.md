@@ -73,13 +73,40 @@ The gap between the two figures (approx. $140) is the supporting-tooling slice: 
 overlay package and the workflow plumbing that this exercise leaned on but that
 isn't strictly part of the portal itself.
 
+### 2b. Cost by activity
+
+The two scope headlines above stay the summary; this table breaks the same spend
+out by activity. Only the bug-hunt anchor (approx. $11, measured directly) and the
+$310/$450 scope totals are measured — the within-scope splits are reconciled
+medians of three independent weighting methods (code volume, work-unit count,
+reasoning intensity), so the points should never be quoted without their ranges.
+
+| Category | Scope | Estimate | Range | Basis |
+|---|---|---|---|---|
+| Working prototype | exercise | $139 | $52–$225 | Borrower-portal app code across approx. 10 oper-test PRs (PR#1 approx. 750 app lines dominates, PR#3, Fly deploy scaffold PR#2); tests/e2e/lint carved out. Largest exercise bucket in all 3 splits. |
+| Testing | exercise | $68 | $32–$147 | TDD unit/integration (Django test client / call_command), PR#1 approx. 600 lines dominates + PR#3/#11 + combined PR#6-10 portions. Boundary with E2E is fuzzy. |
+| E2E testing | exercise | $54 | $23–$90 | Playwright suite, PR#4 (approx. 720 lines incl uv.lock+ci) dominates + PR#6/#8/#10 increments. |
+| Bug hunt | exercise | $11 | $10–$12 | HARD ANCHOR: single in-browser live-app/deploy-verify pass, approx. 140K–232K image tokens + cache re-read over roughly 580 turns, measured directly. Range not widened. |
+| Checks for code quality | exercise | $38 | $15–$76 | ruff + ty per-PR gates (embedded), PR#1 review/codex cycle, discounted COST.md authoring. Thin/embedded evidence, hence the wide range. |
+| Fixing teatree upstream | teatree | $137 | $68–$206 | Three gate-hardening PRs (teatree #1477 keystone +977/-51, #1485, #1484) plus borrower-portal overlay plumbing. Absorbs nearly the whole $140 teatree delta. |
+| Issues related to teatree | teatree | $3 | $0–$15 | Near-empty (verified): no exercise-filed teatree issue; the referenced umbrella pre-exists. Token residual only — recommend folding into Fixing teatree upstream. |
+| **Exercise subtotal** | exercise | **$310** | $100–$620 | working prototype + testing + e2e + bug hunt + code-quality (browser tokens included, not additive) |
+| **Teatree subtotal** | teatree | **$140** | — | fixing teatree upstream + teatree issues ($450 − $310) |
+| **Grand total** | both | **$450** | $160–$800 | exercise + teatree |
+
+The two teatree lines are honestly one number: no exercise-driven teatree issue
+was filed, so the $3 row is a token residual and folds into *Fixing teatree
+upstream* for a single teatree line of $140. Testing and E2E share a fuzzy
+boundary where PRs mix unit and Playwright changes; if a single robust figure is
+wanted, report a combined *all testing* line of approx. $122 ($32–$237).
+
 **Browser and image tokens.** The in-browser debugging (exercising the deployed
 app to find the bugs behind PRs #8/#9/#10) and the deploy-verification
 screenshots cost roughly **$10–12**. Image tokens are expensive and not
 cache-friendly, so they are worth calling out — but they are **already counted
 inside the approx. $310 exercise-only figure**, not added on top of it.
 
-### 2b. Sensitivity — why the range is wide
+### 2c. Sensitivity — why the range is wide
 
 The headline figures swing on two things the estimate can't pin down precisely:
 
@@ -119,7 +146,7 @@ one-line config fix) that cost calendar time but burned almost no tokens.
 likely short.**
 
 A clean, from-scratch build of just the portal realistically runs **approx.
-$75–$100** in metered tokens (§2b) — so a $50 budget is on the optimistic side
+$75–$100** in metered tokens (§2c) — so a $50 budget is on the optimistic side
 and will probably fall short once you include the things that made this build
 good: running the full test suite often, exercising the live app, and an
 adversarial bug-hunt. The live-app debugging behind PRs #8/#9/#10 was only
