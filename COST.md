@@ -39,7 +39,7 @@ write costs **1.25×** base input. The portal's own AI feature puts a
 
 This build was driven mostly by an **Opus-class** coding model, so the
 estimates below price tokens at Opus rates — the conservative (most expensive)
-choice. A Sonnet-driven run would be ~40% cheaper on the same token volume.
+choice. A Sonnet-driven run would be about 40% cheaper on the same token volume.
 
 ## 2. Token usage and API-equivalent cost
 
@@ -53,15 +53,15 @@ and the *effective* input rate is far below the $5/MTok headline.
 
 | Phase | Tokens (est.) | API-equiv (est.) | Source |
 |---|---|---|---|
-| Scaffold + FSM domain core + HTMX flow + apply/document + AI analyzer (through PR #2) | ~1.2M | **~$20** | commit note: "Build cost so far: ~$20 (~€19, ~1.2M tokens, est.)" |
-| Profile/admin/prefetch, E2E suite, overlay rename, input hardening, queue-drain (PRs #3–#7) | ~0.7M | ~$11 | estimated (un-instrumented commits) |
-| Negative-amount guard (PR #8) | ~0.5M | ~$8 | commit note: "~$8 in tokens + ~20 min human framing" |
-| Analyzer permanent-error fix (PR #9) | ~0.4M | ~$6 | commit note: "~$6 in tokens (incl. live browser exercise)" |
-| Dashboard dead-CTA fix (PR #10) | ~0.3M | ~$5 | commit note: "~$5 in tokens" |
-| **This hardening pass** (bug-hunt audit fold-in, overlay build-out, COST + README, deploy verify) | ~0.6–1.6M | **~$10–25** | estimated (read-heavy audit + multi-file edits + deploy) |
-| **Total** | **~3.7–4.7M** | **~$60–75 (conservative)** | sum |
+| Scaffold + FSM domain core + HTMX flow + apply/document + AI analyzer (through PR #2) | ≈1.2M | **≈$20** | commit note: "Build cost so far: ≈$20 (≈€19, ≈1.2M tokens, est.)" |
+| Profile/admin/prefetch, E2E suite, overlay rename, input hardening, queue-drain (PRs #3–#7) | ≈0.7M | ≈$11 | estimated (un-instrumented commits) |
+| Negative-amount guard (PR #8) | ≈0.5M | ≈$8 | commit note: "≈$8 in tokens + ≈20 min human framing" |
+| Analyzer permanent-error fix (PR #9) | ≈0.4M | ≈$6 | commit note: "≈$6 in tokens (incl. live browser exercise)" |
+| Dashboard dead-CTA fix (PR #10) | ≈0.3M | ≈$5 | commit note: "≈$5 in tokens" |
+| **This hardening pass** (bug-hunt audit fold-in, overlay build-out, COST + README, deploy verify) | ≈0.6–1.6M | **≈$10–25** | estimated (read-heavy audit + multi-file edits + deploy) |
+| **Total** | **≈3.7–4.7M** | **≈$60–75 (conservative)** | sum |
 
-The per-fix notes (~$5–8 each) are themselves Opus-rate estimates of a *small*
+The per-fix notes (≈$5–8 each) are themselves Opus-rate estimates of a *small*
 focused change; the hardening pass is wider (16 findings, an overlay package, a
 cost report, a README, two test suites touched, a redeploy), so its range is
 the widest single line.
@@ -70,15 +70,15 @@ the widest single line.
 
 The total swings on two levers the estimates can't pin down precisely:
 
-- **Model.** Opus rates give the ~$60–75 figure above. The same token volume on
-  **Sonnet 4.6** would be **~$36–45**.
+- **Model.** Opus rates give the ≈$60–75 figure above. The same token volume on
+  **Sonnet 4.6** would be **≈$36–45**.
 - **Cache efficiency.** The phase numbers price tokens at blended rates. If the
   agentic loop's cache-hit ratio is high (most of a long session's input is
   re-read cached context at $0.50/MTok, not fresh input at $5/MTok), the true
-  cost lands at the **low end (~$45)**. A low cache-hit run with lots of
-  full-file re-reads pushes toward the **high end (~$75)**.
+  cost lands at the **low end (≈$45)**. A low cache-hit run with lots of
+  full-file re-reads pushes toward the **high end (≈$75)**.
 
-So the honest band is **~$45 (Sonnet / cache-efficient) to ~$75 (Opus /
+So the honest band is **≈$45 (Sonnet / cache-efficient) to ≈$75 (Opus /
 cache-poor)**, centring around **$55–65** for the Opus-driven run this actually
 was.
 
@@ -91,7 +91,7 @@ was.
   agent actually generating and running code, dominated by test runs, the live
   browser exercises that found PR #8/#9/#10, and the deploy round-trips.
 - **Active *human* time:** small — framing the task, the deploy-account
-  decision, and oversight. The per-PR notes record figures like "~20 min human
+  decision, and oversight. The per-PR notes record figures like "≈20 min human
   framing/oversight"; summed across the build, human hands-on time is roughly
   **1–2 hours**, mostly review and unblocking, not authoring.
 
@@ -106,10 +106,10 @@ disciplined, no with any margin for trouble:
 
 - The *happy-path* build (plan → implement → test → ship, little live
   debugging) on **Sonnet with good cache reuse** fits comfortably under $50
-  (~$36–45 estimated).
+  (≈$36–45 estimated).
 - The *real* build — which included live browser debugging (the bugs in #8/#9/
   #10 were only found by exercising the deployed app), a few re-plans, and a
-  wide hardening pass — on **Opus** runs **~$55–75**, i.e. **over $50**.
+  wide hardening pass — on **Opus** runs **≈$55–75**, i.e. **over $50**.
 - A metered key also adds *operational anxiety*: a candidate watching a depleting
   balance will avoid the very things that made this build good (running the full
   suite often, exercising the live app, an adversarial bug-hunt). That pressure
@@ -132,8 +132,32 @@ a variable bill that a candidate could unintentionally run up. A $50 key works
 as a *floor* — enough to ship a solid core — but it quietly taxes the behaviours
 that separate a good submission from a great one.
 
+## 5. Hosting cost (separate from the token budget)
+
+One thing worth separating out: the **≈$50 figure above is an Anthropic
+API-token budget for *building* the portal**, not what it costs to *host* it.
+Running the live demo is a different, much smaller line item — and it has a
+catch worth flagging.
+
+This demo deploys to **Fly.io** as a single small Machine plus a volume (see
+[`DEPLOY.md`](DEPLOY.md)). At current Fly pricing:
+
+- A `shared-cpu-1x` Machine with 256MB RAM is **≈$2/month** always-on (**≈$6/month**
+  at 1GB RAM).
+- A persistent volume is **$0.15/GB per month** (this demo uses 1GB).
+- Fly's auto-stop suspends an idle Machine, so a demo that mostly sits unused
+  drops its compute cost toward **≈$0** — you mainly keep paying for the volume.
+
+So hosting is on the order of **a few dollars a month**, trivially small next to
+the build's token cost. The catch is the entry barrier, not the price: **new Fly
+organizations have no free tier, and a credit card is required on file just to
+deploy at all.** That is easy to forget when planning a take-home — the build
+budget and the hosting account are two separate prerequisites, and the second
+one needs a payment card before a single `fly deploy` will run.
+
 ## Sources
 
 - [Anthropic API pricing (platform.claude.com)](https://platform.claude.com/docs/en/about-claude/pricing)
+- [Fly.io pricing (fly.io/docs/about/pricing)](https://fly.io/docs/about/pricing/)
 - Per-PR API-equivalent token notes recorded in this repo's commit messages
   (PRs #2, #8, #9, #10).

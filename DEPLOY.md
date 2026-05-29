@@ -22,7 +22,9 @@ need a local Docker daemon.
 ## One-time prerequisites
 
 - Install flyctl: `curl -L https://fly.io/install.sh | sh` (or `brew install flyctl`).
-- A Fly.io account (free tier is enough for this demo).
+- A Fly.io account with a payment card on file (new orgs have no free tier and a
+  card is required to deploy at all; running this demo is a few dollars a month —
+  see the *Hosting cost* note in [`COST.md`](COST.md)).
 
 ## Deploy steps (in order)
 
