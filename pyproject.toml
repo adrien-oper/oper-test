@@ -19,7 +19,7 @@ dependencies = [
 # Register the lightweight teatree overlay. teatree discovers it through this
 # entry point; it is dev-only tooling and never imported by the portal runtime.
 [project.entry-points."teatree.overlays"]
-oper-test = "overlay.overlay:BorrowerPortalOverlay"
+borrower-portal = "overlay.overlay:BorrowerPortalOverlay"
 
 [dependency-groups]
 dev = [
