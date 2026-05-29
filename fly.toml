@@ -29,9 +29,15 @@ primary_region = "ams"  # Amsterdam (EU)
 [deploy]
   release_command = "python manage.py migrate --noinput"
 
+# IMPORTANT SQLite constraint: a Fly volume attaches to exactly one Machine and
+# SQLite is a single-file single-host database, so there is exactly one process
+# group. A separate `worker` Machine would mount no volume and poll an empty
+# database, never seeing the tasks the web Machine enqueues; the db_worker
+# therefore runs co-located with gunicorn on this single volume-backed Machine
+# (started by docker-entrypoint.sh). Splitting the worker out requires moving
+# the database to LiteFS / Postgres first. See DEPLOY.md.
 [processes]
   web = "gunicorn config.wsgi --bind 0.0.0.0:8000 --workers 2 --timeout 60 --access-logfile - --error-logfile -"
-  worker = "python manage.py db_worker --no-startup-delay"
 
 [http_service]
   internal_port = 8000
@@ -41,20 +47,6 @@ primary_region = "ams"  # Amsterdam (EU)
   min_machines_running = 1
   processes = ["web"]
 
-# IMPORTANT SQLite constraint: a Fly volume attaches to exactly one Machine, and
-# SQLite is a single-file single-host database. The volume is therefore mounted
-# on the `web` process group only, and for a working demo BOTH gunicorn and the
-# db_worker must run on the SAME single Machine that holds the volume. Run the
-# worker co-located rather than as its own Machine:
-#
-#     fly scale count web=1 worker=0          # one web Machine holds the volume
-#     # then start the durable worker on that same Machine, e.g. via a process
-#     # manager in the image, OR rely on the worker process group ONLY if you
-#     # move the database to LiteFS / Postgres (multi-Machine safe).
-#
-# For this stubbed-AI demo, document-analysis tasks are short; keeping a single
-# web Machine (with the worker scaled to 0 unless you adopt LiteFS/Postgres)
-# avoids two Machines fighting over one SQLite file. See DEPLOY.md.
 [[mounts]]
   source = "data"
   destination = "/data"
