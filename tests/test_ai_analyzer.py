@@ -110,10 +110,26 @@ class TestStubBackend:
         assert result.mismatches == []
 
 
+class _FakeAuthError(Exception):
+    pass
+
+
+class _FakePermissionError(Exception):
+    pass
+
+
+class _FakeNotFoundError(Exception):
+    pass
+
+
 def _fake_sdk(create, mocker):
     fake = SimpleNamespace(messages=SimpleNamespace(create=create))
     module = mocker.MagicMock()
     module.Anthropic.return_value = fake
+    # The analyzer catches these by class, so they must be real exception types.
+    module.AuthenticationError = _FakeAuthError
+    module.PermissionDeniedError = _FakePermissionError
+    module.NotFoundError = _FakeNotFoundError
     mocker.patch.dict("sys.modules", {"anthropic": module})
     return module
 
@@ -208,6 +224,25 @@ class TestSdkBackend:
         with (
             override_settings(ANTHROPIC_API_KEY="sk-test", DOCUMENT_ANALYZER_BACKEND="sdk"),
             pytest.raises(RuntimeError, match="rate limited"),
+        ):
+            analyze_document("text", "doc.pdf", facts)
+
+    @pytest.mark.parametrize("error_attr", ["AuthenticationError", "PermissionDeniedError", "NotFoundError"])
+    def test_unrecoverable_api_errors_become_backend_error(self, facts, mocker, error_attr):
+        # A rejected/forbidden key or an unknown model is permanent: a retry
+        # fails identically. The analyzer must surface it as a terminal backend
+        # error so the task fails the document instead of wedging it.
+        module = _fake_sdk(lambda **_: None, mocker)
+        exc_type = getattr(module, error_attr)
+
+        def _raise(**_):
+            msg = "boom"
+            raise exc_type(msg)
+
+        module.Anthropic.return_value.messages.create = _raise
+        with (
+            override_settings(ANTHROPIC_API_KEY="sk-bad", DOCUMENT_ANALYZER_BACKEND="sdk"),
+            pytest.raises(AnalyzerBackendError, match="unrecoverable"),
         ):
             analyze_document("text", "doc.pdf", facts)
 

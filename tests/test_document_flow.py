@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
-from portal.ai.analyzer import InvalidAnalysisError
+from portal.ai.analyzer import AnalyzerBackendError, InvalidAnalysisError
 from portal.models import Application, Document, DocumentState, IncomeLine, Simulation
 from portal.tasks import analyze_document_task, run_document_analysis
 
@@ -142,6 +142,15 @@ class TestAnalysisTask:
             run_document_analysis(document.pk)
         document = Document.objects.get(pk=document.pk)
         assert document.state == DocumentState.ANALYZING
+
+    def test_task_fails_on_permanent_backend_error(self, application, mocker):
+        # A rejected API key or unknown model is permanent: retrying it forever
+        # would leave the document spinning in ``analyzing``. It must terminate.
+        document = _upload(application)
+        mocker.patch("portal.tasks.analyze_document", side_effect=AnalyzerBackendError("invalid key"))
+        run_document_analysis(document.pk)
+        document = Document.objects.get(pk=document.pk)
+        assert document.state == DocumentState.FAILED
 
     def test_task_resumes_a_stranded_analyzing_document(self, application):
         document = _upload(application)

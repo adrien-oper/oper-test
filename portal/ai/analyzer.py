@@ -156,23 +156,31 @@ def _sdk_result(text: str, filename: str, facts: ApplicationFacts) -> AnalysisRe
     import anthropic  # noqa: PLC0415 — optional dependency, only needed on the live path
 
     client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-    response = client.messages.create(
-        model=settings.ANTHROPIC_MODEL,
-        max_tokens=MAX_TOKENS,
-        system=[
-            {
-                "type": "text",
-                "text": SYSTEM_PROMPT,
-                "cache_control": {"type": "ephemeral"},
-            },
-        ],
-        messages=[
-            {
-                "role": "user",
-                "content": _user_prompt(text, filename),
-            },
-        ],
-    )
+    try:
+        response = client.messages.create(
+            model=settings.ANTHROPIC_MODEL,
+            max_tokens=MAX_TOKENS,
+            system=[
+                {
+                    "type": "text",
+                    "text": SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                },
+            ],
+            messages=[
+                {
+                    "role": "user",
+                    "content": _user_prompt(text, filename),
+                },
+            ],
+        )
+    except (anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.NotFoundError) as exc:
+        # A bad/missing key, a key without access, or an unknown model are
+        # permanent: every retry fails identically. Surface them as a config
+        # error so the caller fails the document instead of wedging it in
+        # ``analyzing`` while the backend retries forever.
+        msg = f"The Anthropic API rejected the request as unrecoverable: {type(exc).__name__}."
+        raise AnalyzerBackendError(msg) from exc
     return _result_from_payload(_parse_payload(response.content[0].text), facts, model_used=settings.ANTHROPIC_MODEL)
 
 
