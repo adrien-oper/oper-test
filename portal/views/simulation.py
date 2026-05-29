@@ -186,14 +186,25 @@ def delete_expense_line(request: HttpRequest, pk: int) -> HttpResponse:
     )
 
 
+# Slider amounts are money: a 12-digit, 2-decimal field caps them well below
+# this. Anything larger (or non-finite) is not a usable amount and would raise
+# once fed to the affordability maths, so the parser rejects it outright.
+_MAX_MONEY_PARAM = Decimal("1e11")
+
+
 def _decimal_param(request: HttpRequest, name: str) -> Decimal | None:
     raw = request.GET.get(name)
     if not raw:
         return None
     try:
-        return Decimal(raw)
+        value = Decimal(raw)
     except (InvalidOperation, TypeError):
         return None
+    # ``Decimal`` parses "NaN"/"Infinity" without error, and a huge exponent
+    # parses as a finite value that still overflows the maths downstream.
+    if not value.is_finite() or abs(value) > _MAX_MONEY_PARAM:
+        return None
+    return value
 
 
 def _int_param(request: HttpRequest, name: str) -> int | None:

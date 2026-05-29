@@ -171,3 +171,14 @@ class TestReport:
             reverse("portal:simulation_step", kwargs={"slug": "report"}) + "?own_funds=abc&duration=xyz",
         )
         assert response.status_code == 200
+
+    @pytest.mark.parametrize("own_funds", ["NaN", "Infinity", "-Infinity", "sNaN", "1e10000"])
+    def test_slider_ignores_non_finite_own_funds(self, client, own_funds):
+        # ``Decimal`` parses these without error, but feeding them to the
+        # affordability maths used to raise and return a 500.
+        self._ready_simulation(client)
+        response = client.get(
+            reverse("portal:simulation_step", kwargs={"slug": "report"}) + f"?own_funds={own_funds}",
+        )
+        assert response.status_code == 200
+        assert b"Loan amount" in response.content

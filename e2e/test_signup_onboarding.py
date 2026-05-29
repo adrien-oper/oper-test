@@ -14,8 +14,8 @@ from portal.models import HelpOffice, Simulation
 pytestmark = pytest.mark.e2e
 
 
-def test_signup_through_to_dashboard_claims_the_simulation(page: Page, live_url, db):
-    HelpOffice.objects.create(name="Central", city="Brussels")
+def test_signup_through_to_dashboard_claims_the_simulation(page: Page, live_url, seeded_offices):
+    office = HelpOffice.objects.first()  # provided by the seed migration's data function
 
     # Start an anonymous simulation so sign-up has something to claim.
     page.goto(live_url)
@@ -36,7 +36,7 @@ def test_signup_through_to_dashboard_claims_the_simulation(page: Page, live_url,
     page.click("button:has-text('Continue')")
 
     expect(page.get_by_role("heading", name="Choose a help office")).to_be_visible()
-    page.select_option("#id_office", label="Central (Brussels)")
+    page.select_option("#id_office", label=str(office))
     page.click("button:has-text('Finish')")
 
     expect(page).to_have_url(f"{live_url}/dashboard/")

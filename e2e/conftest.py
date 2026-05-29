@@ -10,9 +10,11 @@ right where a real worker would pick it up — the django-tasks-db worker is not
 running under ``live_server``, so the queue would otherwise never drain.
 """
 
+import importlib
 import os
 
 import pytest
+from django.apps import apps
 from django.contrib.auth import get_user_model
 from playwright.sync_api import Page, expect
 
@@ -50,6 +52,20 @@ def _stub_analyzer(settings, tmp_path):
 @pytest.fixture
 def live_url(live_server):
     return live_server.url
+
+
+@pytest.fixture
+def seeded_offices(db):
+    """Apply the help-office seed migration's data function for a browser test.
+
+    ``live_server`` drives each spec in a ``TransactionTestCase``, which flushes
+    every table between tests — dropping the rows the seed migration created at
+    migrate time. Re-applying the migration's own (idempotent) data function
+    restores them while still exercising the real seed logic the deploy relies
+    on, rather than a hand-built office.
+    """
+    seed = importlib.import_module("portal.migrations.0003_seed_help_offices")
+    seed.seed_offices(apps, None)
 
 
 @pytest.fixture
