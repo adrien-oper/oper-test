@@ -59,25 +59,31 @@ class ContributionForm(forms.ModelForm):
     class Meta:
         model = Simulation
         fields = ["own_funds"]
+        widgets = {"own_funds": forms.NumberInput(attrs={"min": "0", "step": "0.01"})}
 
 
 class PersonalForm(forms.ModelForm):
     class Meta:
         model = Simulation
         fields = ["date_of_birth", "dependents"]
-        widgets = {"date_of_birth": forms.DateInput(attrs={"type": "date"})}
+        widgets = {
+            "date_of_birth": forms.DateInput(attrs={"type": "date"}),
+            "dependents": forms.NumberInput(attrs={"min": "0", "step": "1"}),
+        }
 
 
 class IncomeLineForm(forms.ModelForm):
     class Meta:
         model = IncomeLine
         fields = ["income_type", "monthly_amount"]
+        widgets = {"monthly_amount": forms.NumberInput(attrs={"min": "0", "step": "0.01"})}
 
 
 class ExpenseLineForm(forms.ModelForm):
     class Meta:
         model = ExpenseLine
         fields = ["expense_type", "monthly_amount"]
+        widgets = {"monthly_amount": forms.NumberInput(attrs={"min": "0", "step": "0.01"})}
 
 
 class DocumentUploadForm(forms.ModelForm):
