@@ -56,6 +56,11 @@ class TestWizardNavigation:
         response = client.get(reverse("portal:simulation_step", kwargs={"slug": "borrowers"}))
         assert b"Back" in response.content
 
+    @pytest.mark.parametrize("slug", ["bogusstep", "report2", "PURPOSE", "123"])
+    def test_unknown_step_slug_is_not_found(self, client, slug):
+        response = client.get(reverse("portal:simulation_step", kwargs={"slug": slug}))
+        assert response.status_code == 404
+
 
 class TestFinancialSteps:
     def _begin(self, client):

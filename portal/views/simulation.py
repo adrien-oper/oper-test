@@ -9,7 +9,7 @@ read from ``portal.wizard``.
 from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth.decorators import login_required
-from django.http import HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 
@@ -77,6 +77,8 @@ def simulation_start(request: HttpRequest) -> HttpResponse:
 @require_http_methods(["GET", "POST"])
 def simulation_step(request: HttpRequest, slug: str) -> HttpResponse:
     """Render or process one wizard step."""
+    if not wizard.is_step(slug):
+        raise Http404
     if slug == "report":
         return _report(request)
     if slug == "income":
