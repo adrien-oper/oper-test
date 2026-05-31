@@ -57,6 +57,7 @@ SDK = "sdk"
 CLI = "cli"
 
 _VALID_KINDS = {kind.value for kind in enums.DocumentKind}
+# Assumes period as decimal separator; European "1.234,56" format is not handled.
 _PRICE_NON_NUMERIC = re.compile(r"[^\d.]")
 
 

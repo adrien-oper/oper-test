@@ -9,6 +9,7 @@
       <div class="price">&euro; {{ simulation.feasibility.loan_amount|floatformat:0 }}</div>
       <span class="pill pill-good">{{ simulation.get_purpose_display }}</span>
     </div>
+    {# state values match SimulationState.CONVERTED / COMPLETED #}
     {% if simulation.state == "converted" %}
       <a class="btn" href="{% url 'portal:application_detail' pk=simulation.application.pk %}">View application</a>
     {% elif simulation.state == "completed" %}
