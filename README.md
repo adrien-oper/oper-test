@@ -167,7 +167,23 @@ Pre-commit hooks (`prek install`) run ruff, gitleaks, hygiene checks, and a
 pre-push `ty` + `pytest` gate. End-to-end Playwright coverage of the core
 journeys lives under `e2e/` (run with `uv run --group e2e pytest e2e --no-cov`).
 
+The live-app bug hunt (post-deploy exploratory pass: dead CTAs, document-status
+wedging, N+1 probe) was driven by the
+[`/t3:teatree-bughunt`](https://github.com/souliane/teatree/tree/main/plugins/t3/skills/teatree-bughunt)
+skill; the Playwright E2E suite was written under the
+[`/t3:e2e`](https://github.com/souliane/teatree/tree/main/plugins/t3/skills/e2e)
+skill.
+
 ## teatree reuse
+
+teatree was used here rather than a blank-slate tooling stack because the
+quality gates, overlay lifecycle, and AI skills (ruff/ty/pytest config, `prek`
+hooks, `ac-django`, `ac-python`) already existed and were usable as-is — there
+was no reason to reinvent CI and review tooling for a single exercise repo.
+The overlay wasn't wired correctly on the first attempt: the dispatch routing
+that routes teatree's FSM groups to the project's own `manage.py` was missing
+and had to be corrected before `t3 borrower-portal run tests` and the lifecycle
+commands worked end-to-end.
 
 This repo reuses [teatree](https://github.com/souliane/teatree), an open-source
 agent CLI, in two honest ways:
@@ -226,9 +242,7 @@ t3 borrower-portal ticket clear … / merge # the sanctioned review→merge keys
 `provision` runs the portal's own `manage.py` in a clean environment pinned to
 `config.settings`, so the worktree's SQLite file and migrations stay the
 portal's — teatree's control database is never touched. The lifecycle is driven
-through teatree's core commands (`python -m teatree …`); a teatree-side dispatch
-gap that routes these FSM groups to a lightweight overlay's `manage.py` is noted
-in the follow-up PR.
+through teatree's core commands (`python -m teatree …`).
 
 ## AI-usage note
 
