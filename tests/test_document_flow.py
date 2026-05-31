@@ -226,6 +226,32 @@ class TestAnalysisTask:
         document = Document.objects.get(pk=document.pk)
         assert document.state == DocumentState.ANALYZED
 
+    def test_claim_does_not_trigger_n_plus_1_for_application_and_simulation(
+        self, application, django_assert_max_num_queries, mocker
+    ):
+        """select_related must pre-join application and simulation in the claim SELECT.
+
+        Without it, _facts_for triggers two extra lazy FK queries per task run.
+        Measure at the run_document_analysis level: patch analyze_document to a
+        no-op so only the claim transaction's queries are counted.
+        """
+        document = _upload(application)
+        mocker.patch(
+            "portal.tasks.analyze_document",
+            return_value=mocker.Mock(
+                detected_kind="payslip",
+                summary="s",
+                extracted_fields={},
+                mismatches=[],
+                is_stub=True,
+                model_used="stub",
+            ),
+        )
+        # Claim (SELECT+UPDATE) + finalise (SELECT+UPDATE+INSERT) + savepoint framing = 14.
+        # Without select_related, two lazy FK traversals in _facts_for add 2 more.
+        with django_assert_max_num_queries(14):
+            run_document_analysis(document.pk)
+
     def test_task_ignores_missing_document(self):
         run_document_analysis(999999)  # must not raise
 

@@ -42,7 +42,7 @@ class TestConversion:
         sim = _completed_simulation(user)
         Application.create_from_simulation(sim)
         sim2 = Simulation.objects.get(pk=sim.pk)
-        with pytest.raises(Exception):  # noqa: B017, PT011 — OneToOne integrity
+        with pytest.raises(ValidationError):
             Application.create_from_simulation(sim2)
 
     def test_cannot_convert_a_draft_simulation(self, user):

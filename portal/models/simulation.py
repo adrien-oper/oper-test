@@ -121,7 +121,7 @@ class Simulation(models.Model):
             own_funds=self.own_funds,
             monthly_income=self.total_monthly_income,
             monthly_expenses=self.total_monthly_expenses,
-            duration_years=duration_years or self.duration_years,
+            duration_years=self.duration_years if duration_years is None else duration_years,
             own_funds_override=own_funds_override,
         )
 

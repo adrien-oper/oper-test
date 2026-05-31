@@ -103,7 +103,7 @@ class DocumentUploadForm(forms.ModelForm):
             msg = f"Unsupported file type. Allowed: {allowed}."
             raise forms.ValidationError(msg)
 
-        if upload.content_type and upload.content_type not in _ALLOWED_CONTENT_TYPES[suffix]:
+        if not upload.content_type or upload.content_type not in _ALLOWED_CONTENT_TYPES[suffix]:
             msg = "File content type does not match its extension."
             raise forms.ValidationError(msg)
         return upload

@@ -97,3 +97,11 @@ class TestDocumentUploadValidation:
         content_type = "image/png" if ext == "png" else "text/plain"
         upload = SimpleUploadedFile(name, b"data", content_type=content_type)
         assert _form(upload).is_valid()
+
+    @pytest.mark.parametrize("content_type", ["", None])
+    def test_rejects_absent_content_type(self, content_type):
+        """An absent or empty content-type must not bypass the MIME check."""
+        upload = SimpleUploadedFile("payslip.pdf", b"%PDF-1.4 hello", content_type=content_type)
+        form = _form(upload)
+        assert not form.is_valid()
+        assert "file" in form.errors

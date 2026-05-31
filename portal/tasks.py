@@ -34,7 +34,12 @@ _TERMINAL_ANALYSIS_ERRORS = (InvalidAnalysisError, UnsupportedDocumentError, Ana
 def _claim(document_id: int) -> Document | None:
     """Lock the row and move it into ``analyzing``; return None if not claimable."""
     with transaction.atomic():
-        document = Document.objects.select_for_update().filter(pk=document_id).first()
+        document = (
+            Document.objects.select_for_update()
+            .select_related("application__simulation")
+            .filter(pk=document_id)
+            .first()
+        )
         if document is None or document.state not in _RESUMABLE_STATES:
             return None
         if document.state == DocumentState.UPLOADED:
